@@ -10,19 +10,36 @@ const PLACEHOLDER_ICON: &[u8] = &[
     66, 96, 130,
 ];
 
-fn ensure_placeholder_icon() {
-    let icon = Path::new("icons/icon.png");
-    if icon.exists() {
-        return;
+fn ensure_placeholder_icons() {
+    let icon_dir = Path::new("icons");
+    fs::create_dir_all(icon_dir).expect("failed to create Tauri icon directory");
+
+    let png = icon_dir.join("icon.png");
+    if !png.exists() {
+        fs::write(&png, PLACEHOLDER_ICON).expect("failed to write placeholder Tauri PNG icon");
     }
 
-    if let Some(parent) = icon.parent() {
-        fs::create_dir_all(parent).expect("failed to create Tauri icon directory");
+    // On Windows tauri-build embeds `icons/icon.ico` into the executable resource.
+    // Generate it from the PNG when the repository does not yet have final branding.
+    #[cfg(target_os = "windows")]
+    {
+        let ico = icon_dir.join("icon.ico");
+        if !ico.exists() {
+            let status = std::process::Command::new("powershell")
+                .args([
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "$png=[IO.File]::ReadAllBytes('icons/icon.png'); $fs=[IO.File]::Create('icons/icon.ico'); $bw=New-Object IO.BinaryWriter($fs); $bw.Write([UInt16]0); $bw.Write([UInt16]1); $bw.Write([UInt16]1); $bw.Write([Byte]32); $bw.Write([Byte]32); $bw.Write([Byte]0); $bw.Write([Byte]0); $bw.Write([UInt16]1); $bw.Write([UInt16]32); $bw.Write([UInt32]$png.Length); $bw.Write([UInt32]22); $bw.Write($png); $bw.Close(); $fs.Close()",
+                ])
+                .status()
+                .expect("failed to invoke PowerShell to generate Tauri ICO icon");
+            assert!(status.success(), "failed to generate Tauri ICO icon");
+        }
     }
-    fs::write(icon, PLACEHOLDER_ICON).expect("failed to write placeholder Tauri icon");
 }
 
 fn main() {
-    ensure_placeholder_icon();
+    ensure_placeholder_icons();
     tauri_build::build()
 }
