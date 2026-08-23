@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { Clock3, Copy, Download, Pencil, Plus, RefreshCw, Search, Server, Star, Trash2, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ToolsPanel } from "./ToolsPanel";
 
 type TerminalOutput = { sessionId: string; data: number[] };
 type ServerRecord = {
@@ -101,6 +102,7 @@ export function App() {
     }
     return [...map.entries()];
   }, [filtered]);
+  const activeTab = tabs.find((tab) => tab.id === activeId) ?? null;
 
   async function startSession(server: ServerRecord) {
     const id = await invoke<string>("terminal_start_server", { serverId: server.id });
@@ -229,6 +231,8 @@ export function App() {
       </button>)}</div></header>
       {activeId ? <div ref={terminalHost} className="terminal-host" /> : <div className="welcome"><div className="welcome-icon"><Server size={30} /></div><h1>Your servers, one click away</h1><p>Add a server to SSHDeck or import an existing OpenSSH host. Private keys stay managed by OpenSSH.</p></div>}
     </section>
+
+    <ToolsPanel servers={servers} activeSessionId={activeId} activeServerId={activeTab?.serverId ?? null} onError={setError} />
 
     {draft && <div className="modal-backdrop"><form className="modal" onSubmit={(event) => void save(event)}>
       <div className="modal-head"><div><h2>{draft.id ? "Edit server" : "Add server"}</h2><p>Stored locally by SSHDeck. Private key contents are never copied.</p></div><button type="button" className="icon-button" onClick={() => setDraft(null)}><X size={16} /></button></div>
