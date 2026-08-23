@@ -4,7 +4,11 @@ use sshdeck::config::SshConfig;
 use sshdeck::ssh::SshClient;
 
 #[derive(Debug, Parser)]
-#[command(name = "sshdeck", version, about = "A fast SSH workspace for developers")]
+#[command(
+    name = "sshdeck",
+    version,
+    about = "A fast SSH workspace for developers"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
