@@ -226,7 +226,7 @@ export function App() {
     <section className="workspace">
       <header className="topbar"><div className="tabs">{tabs.map((tab) => <button key={tab.id} className={`tab ${activeId === tab.id ? "active" : ""}`} onClick={() => setActiveId(tab.id)}>
         <Server size={13} /><span>{tab.name}</span>
-        <RefreshCw size={12} title="Reconnect" onClick={(event) => { event.stopPropagation(); void reconnect(tab); }} />
+        <RefreshCw size={12} onClick={(event) => { event.stopPropagation(); void reconnect(tab); }} />
         <X size={13} onClick={(event) => { event.stopPropagation(); void closeTab(tab.id); }} />
       </button>)}</div></header>
       {activeId ? <div ref={terminalHost} className="terminal-host" /> : <div className="welcome"><div className="welcome-icon"><Server size={30} /></div><h1>Your servers, one click away</h1><p>Add a server to SSHDeck or import an existing OpenSSH host. Private keys stay managed by OpenSSH.</p></div>}
