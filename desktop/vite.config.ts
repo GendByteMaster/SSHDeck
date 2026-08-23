@@ -10,6 +10,7 @@ export default defineConfig({
     watch: {
       ignored: [
         "**/src-tauri/target/**",
+        "**/src-tauri/icons/**",
         "**/target/**",
         "**/.git/**",
       ],
