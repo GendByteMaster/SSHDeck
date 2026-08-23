@@ -2,8 +2,8 @@ mod status;
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::process::{Child as ProcessChild, Command};
-use std::sync::Mutex;
+use std::process::{Child as ProcessChild, Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
@@ -28,8 +28,17 @@ struct Session {
 #[derive(Default)]
 struct Sessions(Mutex<HashMap<String, Session>>);
 
+struct TunnelRuntime {
+    child: ProcessChild,
+    started_at_ms: u64,
+    ended_at_ms: Option<u64>,
+    exit_code: Option<i32>,
+    stderr: Arc<Mutex<String>>,
+    stopped_by_user: bool,
+}
+
 #[derive(Default)]
-struct Tunnels(Mutex<HashMap<String, ProcessChild>>);
+struct Tunnels(Mutex<HashMap<String, TunnelRuntime>>);
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,6 +58,18 @@ struct TerminalSessionStatus {
     duration_ms: u64,
     exit_code: Option<u32>,
     signal: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TunnelProcessStatus {
+    tunnel_id: String,
+    state: String,
+    started_at_ms: u64,
+    ended_at_ms: Option<u64>,
+    duration_ms: u64,
+    exit_code: Option<i32>,
+    reason: Option<String>,
 }
 
 fn now_ms() -> u64 {
@@ -444,6 +465,50 @@ fn validate_tunnel(tunnel: &TunnelRecord) -> Result<(), String> {
     Ok(())
 }
 
+fn tunnel_status_from_runtime(id: &str, runtime: &mut TunnelRuntime) -> Result<TunnelProcessStatus, String> {
+    if runtime.ended_at_ms.is_none() {
+        match runtime.child.try_wait() {
+            Ok(Some(exit)) => {
+                runtime.ended_at_ms = Some(now_ms());
+                runtime.exit_code = exit.code();
+            }
+            Ok(None) => {}
+            Err(error) => return Err(format!("failed to read tunnel process state: {error}")),
+        }
+    }
+
+    let current = now_ms();
+    let end = runtime.ended_at_ms.unwrap_or(current);
+    let state = match runtime.ended_at_ms {
+        None if runtime.stopped_by_user => "stopping",
+        None => "running",
+        Some(_) if runtime.stopped_by_user => "stopped",
+        Some(_) => "failed",
+    };
+    let reason = if state == "failed" {
+        runtime
+            .stderr
+            .lock()
+            .ok()
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+            .map(|value| value.chars().take(1200).collect())
+            .or_else(|| runtime.exit_code.map(|code| format!("ssh tunnel exited with code {code}")))
+    } else {
+        None
+    };
+
+    Ok(TunnelProcessStatus {
+        tunnel_id: id.to_owned(),
+        state: state.to_owned(),
+        started_at_ms: runtime.started_at_ms,
+        ended_at_ms: runtime.ended_at_ms,
+        duration_ms: end.saturating_sub(runtime.started_at_ms),
+        exit_code: runtime.exit_code,
+        reason,
+    })
+}
+
 #[tauri::command]
 fn save_tunnel(mut tunnel: TunnelRecord) -> Result<WorkspaceData, String> {
     if tunnel.id.trim().is_empty() {
@@ -464,13 +529,13 @@ fn save_tunnel(mut tunnel: TunnelRecord) -> Result<WorkspaceData, String> {
 
 #[tauri::command]
 fn delete_tunnel(id: String, tunnels: State<'_, Tunnels>) -> Result<WorkspaceData, String> {
-    if let Some(mut child) = tunnels
+    if let Some(mut runtime) = tunnels
         .0
         .lock()
         .map_err(|_| "tunnel lock poisoned".to_owned())?
         .remove(&id)
     {
-        let _ = child.kill();
+        let _ = runtime.child.kill();
     }
     let store = WorkspaceStore::load_default().map_err(|error| error.to_string())?;
     let mut data = store.load().map_err(|error| error.to_string())?;
@@ -480,7 +545,7 @@ fn delete_tunnel(id: String, tunnels: State<'_, Tunnels>) -> Result<WorkspaceDat
 }
 
 #[tauri::command]
-fn start_tunnel(id: String, tunnels: State<'_, Tunnels>) -> Result<Vec<String>, String> {
+fn start_tunnel(id: String, tunnels: State<'_, Tunnels>) -> Result<TunnelProcessStatus, String> {
     let data = WorkspaceStore::load_default()
         .and_then(|store| store.load())
         .map_err(|error| error.to_string())?;
@@ -513,36 +578,89 @@ fn start_tunnel(id: String, tunnels: State<'_, Tunnels>) -> Result<Vec<String>, 
     command
         .arg("-N")
         .arg("-o")
+        .arg("BatchMode=yes")
+        .arg("-o")
+        .arg("ConnectTimeout=8")
+        .arg("-o")
+        .arg("ServerAliveInterval=15")
+        .arg("-o")
+        .arg("ServerAliveCountMax=3")
+        .arg("-o")
         .arg("ExitOnForwardFailure=yes")
         .arg(match tunnel.kind {
             TunnelKind::Local => "-L",
             TunnelKind::Remote => "-R",
             TunnelKind::Dynamic => "-D",
         })
-        .arg(forward);
+        .arg(forward)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
     append_process_ssh_target(&mut command, &server);
-    let child = command
+    let mut child = command
         .spawn()
         .map_err(|error| format!("failed to start tunnel: {error}"))?;
-    tunnels
+
+    let stderr_text = Arc::new(Mutex::new(String::new()));
+    if let Some(mut stderr) = child.stderr.take() {
+        let capture = Arc::clone(&stderr_text);
+        std::thread::spawn(move || {
+            let mut value = String::new();
+            let _ = stderr.read_to_string(&mut value);
+            if let Ok(mut target) = capture.lock() {
+                *target = value;
+            }
+        });
+    }
+
+    let runtime = TunnelRuntime {
+        child,
+        started_at_ms: now_ms(),
+        ended_at_ms: None,
+        exit_code: None,
+        stderr: stderr_text,
+        stopped_by_user: false,
+    };
+    let mut values = tunnels
         .0
         .lock()
-        .map_err(|_| "tunnel lock poisoned".to_owned())?
-        .insert(id, child);
-    active_tunnels(tunnels)
+        .map_err(|_| "tunnel lock poisoned".to_owned())?;
+    if let Some(mut previous) = values.remove(&id) {
+        let _ = previous.child.kill();
+    }
+    values.insert(id.clone(), runtime);
+    let runtime = values
+        .get_mut(&id)
+        .ok_or_else(|| "tunnel process disappeared after start".to_owned())?;
+    tunnel_status_from_runtime(&id, runtime)
 }
 
 #[tauri::command]
-fn stop_tunnel(id: String, tunnels: State<'_, Tunnels>) -> Result<Vec<String>, String> {
-    if let Some(mut child) = tunnels
+fn stop_tunnel(id: String, tunnels: State<'_, Tunnels>) -> Result<TunnelProcessStatus, String> {
+    let mut values = tunnels
         .0
         .lock()
-        .map_err(|_| "tunnel lock poisoned".to_owned())?
-        .remove(&id)
-    {
-        child.kill().map_err(|error| error.to_string())?;
+        .map_err(|_| "tunnel lock poisoned".to_owned())?;
+    let runtime = values
+        .get_mut(&id)
+        .ok_or_else(|| "tunnel is not running".to_owned())?;
+    runtime.stopped_by_user = true;
+    if runtime.ended_at_ms.is_none() {
+        runtime.child.kill().map_err(|error| error.to_string())?;
     }
-    active_tunnels(tunnels)
+    tunnel_status_from_runtime(&id, runtime)
+}
+
+#[tauri::command]
+fn tunnel_status(id: String, tunnels: State<'_, Tunnels>) -> Result<Option<TunnelProcessStatus>, String> {
+    let mut values = tunnels
+        .0
+        .lock()
+        .map_err(|_| "tunnel lock poisoned".to_owned())?;
+    let Some(runtime) = values.get_mut(&id) else {
+        return Ok(None);
+    };
+    tunnel_status_from_runtime(&id, runtime).map(Some)
 }
 
 #[tauri::command]
@@ -551,11 +669,13 @@ fn active_tunnels(tunnels: State<'_, Tunnels>) -> Result<Vec<String>, String> {
         .0
         .lock()
         .map_err(|_| "tunnel lock poisoned".to_owned())?;
-    values.retain(|_, child| match child.try_wait() {
-        Ok(None) => true,
-        Ok(Some(_)) | Err(_) => false,
-    });
-    Ok(values.keys().cloned().collect())
+    let mut running = Vec::new();
+    for (id, runtime) in values.iter_mut() {
+        if tunnel_status_from_runtime(id, runtime)?.state == "running" {
+            running.push(id.clone());
+        }
+    }
+    Ok(running)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -583,6 +703,7 @@ pub fn run() {
             delete_tunnel,
             start_tunnel,
             stop_tunnel,
+            tunnel_status,
             active_tunnels
         ])
         .run(tauri::generate_context!())
