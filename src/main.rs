@@ -31,8 +31,8 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::List => {
-            let hosts = config.hosts();
-            if hosts.clone().next().is_none() {
+            let hosts: Vec<_> = config.hosts().collect();
+            if hosts.is_empty() {
                 println!("No SSH hosts found in ~/.ssh/config");
             } else {
                 for host in hosts {
