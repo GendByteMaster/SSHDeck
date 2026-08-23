@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Cable, Play, Plus, Square, TerminalSquare, Trash2, X } from "lucide-react";
+import { Activity, Cable, Play, Plus, RefreshCw, Square, TerminalSquare, Trash2, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { formatUptime, ServerStatus } from "./serverStatus";
 
 type Server = { id: string; name: string; group: string | null };
 type QuickCommand = { id: string; name: string; command: string; serverId: string | null; group: string | null };
@@ -21,12 +22,15 @@ type Props = {
   servers: Server[];
   activeSessionId: string | null;
   activeServerId: string | null;
+  activeStatus: ServerStatus | null;
+  statusChecking: boolean;
+  onRefreshStatus: () => Promise<void>;
   onError: (error: string) => void;
 };
 
 const emptyWorkspace: WorkspaceData = { quickCommands: [], tunnels: [] };
 
-export function ToolsPanel({ servers, activeSessionId, activeServerId, onError }: Props) {
+export function ToolsPanel({ servers, activeSessionId, activeServerId, activeStatus, statusChecking, onRefreshStatus, onError }: Props) {
   const [data, setData] = useState<WorkspaceData>(emptyWorkspace);
   const [activeTunnels, setActiveTunnels] = useState<string[]>([]);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -78,7 +82,25 @@ export function ToolsPanel({ servers, activeSessionId, activeServerId, onError }
     } catch (value) { onError(String(value)); }
   }
 
+  const statusState = statusChecking ? "checking" : activeStatus?.state ?? "unknown";
+  const statusLabel = statusChecking ? "Checking" : activeStatus?.state === "online" ? "Online" : activeStatus?.state === "auth_required" ? "Auth required" : activeStatus?.state === "offline" ? "Offline" : activeStatus?.state === "error" ? "SSH error" : "Unknown";
+
   return <aside className="tools-panel">
+    <section className="tool-section status-section">
+      <div className="tool-heading"><div><Activity size={14} /><strong>Server Status</strong></div><button disabled={!activeServerId || statusChecking} onClick={() => void onRefreshStatus().catch((value) => onError(String(value)))} title="Refresh SSH probe"><RefreshCw size={14} className={statusChecking ? "spin" : ""} /></button></div>
+      {activeServer ? <div className="status-card">
+        <div className="status-summary"><span className={`status-dot ${statusState}`} /><div><strong>{activeServer.name}</strong><small>{statusLabel}</small></div></div>
+        <div className="status-grid">
+          <div><span>Session</span><strong>{activeSessionId ? "Open" : "Closed"}</strong></div>
+          <div><span>SSH probe</span><strong>{activeStatus?.latencyMs != null ? `${activeStatus.latencyMs} ms` : "—"}</strong></div>
+          <div><span>Authentication</span><strong>{activeStatus?.sshOk ? "Verified" : activeStatus?.state === "auth_required" ? "Required" : "—"}</strong></div>
+          <div><span>Uptime</span><strong>{formatUptime(activeStatus?.uptimeSeconds ?? null)}</strong></div>
+        </div>
+        {activeStatus?.error && <p className="status-error" title={activeStatus.error}>{activeStatus.error}</p>}
+        <p className="status-note">Status uses an authenticated OpenSSH probe, not ICMP ping.</p>
+      </div> : <p className="tool-empty">Open a server to inspect its SSH status.</p>}
+    </section>
+
     <section className="tool-section">
       <div className="tool-heading"><div><TerminalSquare size={14} /><strong>Quick Commands</strong></div><button onClick={() => setQuickOpen(true)} title="Add command"><Plus size={14} /></button></div>
       <div className="tool-list">
