@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
-import { Clock3, Download, Pencil, Plus, RefreshCw, Search, Server, Star, Trash2, X } from "lucide-react";
+import { Clock3, Copy, Download, Pencil, Plus, RefreshCw, Search, Server, Star, Trash2, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type TerminalOutput = { sessionId: string; data: number[] };
@@ -20,18 +20,11 @@ type ServerRecord = {
 };
 type SessionTab = { id: string; serverId: string; name: string };
 type TerminalEntry = { terminal: Terminal; fit: FitAddon; element: HTMLDivElement };
-
 type ServerDraft = Omit<ServerRecord, "lastConnectedAt"> & { lastConnectedAt?: number | null };
+
 const emptyDraft: ServerDraft = {
-  id: "",
-  name: "",
-  host: "",
-  user: null,
-  port: 22,
-  identityFile: null,
-  group: null,
-  favorite: false,
-  sourceAlias: null,
+  id: "", name: "", host: "", user: null, port: 22, identityFile: null,
+  group: null, favorite: false, sourceAlias: null,
 };
 
 export function App() {
@@ -42,6 +35,7 @@ export function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ServerDraft | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [exportServer, setExportServer] = useState<ServerRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
   const terminals = useRef(new Map<string, TerminalEntry>());
   const terminalHost = useRef<HTMLDivElement | null>(null);
@@ -108,26 +102,34 @@ export function App() {
     return [...map.entries()];
   }, [filtered]);
 
+  async function startSession(server: ServerRecord) {
+    const id = await invoke<string>("terminal_start_server", { serverId: server.id });
+    return { id, serverId: server.id, name: server.name } satisfies SessionTab;
+  }
+
   async function connect(server: ServerRecord) {
     const existing = tabs.find((tab) => tab.serverId === server.id);
-    if (existing) {
-      setActiveId(existing.id);
-      return;
-    }
+    if (existing) { setActiveId(existing.id); return; }
     try {
-      const id = await invoke<string>("terminal_start_server", { serverId: server.id });
-      setTabs((value) => [...value, { id, serverId: server.id, name: server.name }]);
-      setActiveId(id);
+      const tab = await startSession(server);
+      setTabs((value) => [...value, tab]);
+      setActiveId(tab.id);
       void refreshServers();
-    } catch (value) {
-      setError(String(value));
-    }
+    } catch (value) { setError(String(value)); }
   }
 
   async function reconnect(tab: SessionTab) {
-    await closeTab(tab.id);
     const server = servers.find((item) => item.id === tab.serverId);
-    if (server) await connect(server);
+    if (!server) return;
+    try {
+      await invoke("terminal_close", { sessionId: tab.id });
+      terminals.current.get(tab.id)?.terminal.dispose();
+      terminals.current.delete(tab.id);
+      const replacement = await startSession(server);
+      setTabs((value) => value.map((item) => item.id === tab.id ? replacement : item));
+      setActiveId(replacement.id);
+      void refreshServers();
+    } catch (value) { setError(String(value)); }
   }
 
   async function closeTab(id: string) {
@@ -148,9 +150,7 @@ export function App() {
       await invoke("save_server", { server: { ...draft, lastConnectedAt: draft.lastConnectedAt ?? null } });
       setDraft(null);
       await refreshServers();
-    } catch (value) {
-      setError(String(value));
-    }
+    } catch (value) { setError(String(value)); }
   }
 
   async function remove(server: ServerRecord) {
@@ -169,79 +169,90 @@ export function App() {
       await invoke("import_ssh_host", { alias });
       await refreshServers();
       setImportOpen(false);
-    } catch (value) {
-      setError(String(value));
-    }
+    } catch (value) { setError(String(value)); }
+  }
+
+  function sshSnippet(server: ServerRecord) {
+    const alias = server.sourceAlias ?? server.name.trim().replace(/\s+/g, "-").toLowerCase();
+    return [
+      `Host ${alias}`,
+      `    HostName ${server.host}`,
+      ...(server.user ? [`    User ${server.user}`] : []),
+      ...(server.port !== 22 ? [`    Port ${server.port}`] : []),
+      ...(server.identityFile ? [`    IdentityFile ${server.identityFile}`] : []),
+    ].join("\n");
+  }
+
+  async function copyExport(server: ServerRecord) {
+    try {
+      await navigator.clipboard.writeText(sshSnippet(server));
+      setExportServer(null);
+    } catch (value) { setError(`Could not copy to clipboard: ${String(value)}`); }
   }
 
   function ServerRow({ server }: { server: ServerRecord }) {
-    return (
-      <div className="server-row-wrap">
-        <button className="server-row" onClick={() => void connect(server)}>
-          <span className="status-dot" /><Server size={15} />
-          <span className="server-copy"><strong>{server.name}</strong><small>{server.user ? `${server.user}@` : ""}{server.host}:{server.port}</small></span>
-        </button>
-        <div className="row-actions">
-          <button title="Favorite" onClick={() => void toggleFavorite(server)}><Star size={13} fill={server.favorite ? "currentColor" : "none"} /></button>
-          <button title="Edit" onClick={() => setDraft({ ...server })}><Pencil size={13} /></button>
-          <button title="Delete" onClick={() => void remove(server)}><Trash2 size={13} /></button>
-        </div>
+    return <div className="server-row-wrap">
+      <button className="server-row" onClick={() => void connect(server)}>
+        <span className="status-dot" /><Server size={15} />
+        <span className="server-copy"><strong>{server.name}</strong><small>{server.user ? `${server.user}@` : ""}{server.host}:{server.port}</small></span>
+      </button>
+      <div className="row-actions">
+        <button title="Favorite" onClick={() => void toggleFavorite(server)}><Star size={13} fill={server.favorite ? "currentColor" : "none"} /></button>
+        <button title="Export OpenSSH snippet" onClick={() => setExportServer(server)}><Copy size={13} /></button>
+        <button title="Edit" onClick={() => setDraft({ ...server })}><Pencil size={13} /></button>
+        <button title="Delete" onClick={() => void remove(server)}><Trash2 size={13} /></button>
       </div>
-    );
+    </div>;
   }
 
-  return (
-    <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand"><div className="brand-mark">S</div><div><strong>SSHDeck</strong><span>Remote workspace</span></div></div>
-        <div className="sidebar-actions">
-          <button className="primary" onClick={() => setDraft({ ...emptyDraft })}><Plus size={15} /> Add server</button>
-          <button className="secondary" onClick={() => setImportOpen(true)}><Download size={15} /> Import SSH</button>
-        </div>
-        <div className="search"><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search servers" /></div>
+  return <main className="app-shell">
+    <aside className="sidebar">
+      <div className="brand"><div className="brand-mark">S</div><div><strong>SSHDeck</strong><span>Remote workspace</span></div></div>
+      <div className="sidebar-actions">
+        <button className="primary" onClick={() => setDraft({ ...emptyDraft })}><Plus size={15} /> Add server</button>
+        <button className="secondary" onClick={() => setImportOpen(true)}><Download size={15} /> Import SSH</button>
+      </div>
+      <div className="search"><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search servers" /></div>
+      <div className="server-list">
+        {favorites.length > 0 && <><div className="section-label">FAVORITES</div>{favorites.map((server) => <ServerRow key={`fav-${server.id}`} server={server} />)}</>}
+        {recents.length > 0 && <><div className="section-label"><Clock3 size={11} /> RECENT</div>{recents.map((server) => <ServerRow key={`recent-${server.id}`} server={server} />)}</>}
+        {groups.map(([group, items]) => <div key={group}><div className="section-label">{group.toUpperCase()}</div>{items.map((server) => <ServerRow key={server.id} server={server} />)}</div>)}
+        {filtered.length === 0 && <div className="empty">No SSHDeck servers yet. Add one or import from OpenSSH.</div>}
+      </div>
+    </aside>
 
-        <div className="server-list">
-          {favorites.length > 0 && <><div className="section-label">FAVORITES</div>{favorites.map((server) => <ServerRow key={`fav-${server.id}`} server={server} />)}</>}
-          {recents.length > 0 && <><div className="section-label"><Clock3 size={11} /> RECENT</div>{recents.map((server) => <ServerRow key={`recent-${server.id}`} server={server} />)}</>}
-          {groups.map(([group, items]) => <div key={group}><div className="section-label">{group.toUpperCase()}</div>{items.map((server) => <ServerRow key={server.id} server={server} />)}</div>)}
-          {filtered.length === 0 && <div className="empty">No SSHDeck servers yet. Add one or import from OpenSSH.</div>}
-        </div>
-      </aside>
+    <section className="workspace">
+      <header className="topbar"><div className="tabs">{tabs.map((tab) => <button key={tab.id} className={`tab ${activeId === tab.id ? "active" : ""}`} onClick={() => setActiveId(tab.id)}>
+        <Server size={13} /><span>{tab.name}</span>
+        <RefreshCw size={12} title="Reconnect" onClick={(event) => { event.stopPropagation(); void reconnect(tab); }} />
+        <X size={13} onClick={(event) => { event.stopPropagation(); void closeTab(tab.id); }} />
+      </button>)}</div></header>
+      {activeId ? <div ref={terminalHost} className="terminal-host" /> : <div className="welcome"><div className="welcome-icon"><Server size={30} /></div><h1>Your servers, one click away</h1><p>Add a server to SSHDeck or import an existing OpenSSH host. Private keys stay managed by OpenSSH.</p></div>}
+    </section>
 
-      <section className="workspace">
-        <header className="topbar">
-          <div className="tabs">
-            {tabs.map((tab) => (
-              <button key={tab.id} className={`tab ${activeId === tab.id ? "active" : ""}`} onClick={() => setActiveId(tab.id)}>
-                <Server size={13} /><span>{tab.name}</span>
-                <RefreshCw size={12} title="Reconnect" onClick={(event) => { event.stopPropagation(); void reconnect(tab); }} />
-                <X size={13} onClick={(event) => { event.stopPropagation(); void closeTab(tab.id); }} />
-              </button>
-            ))}
-          </div>
-        </header>
-        {activeId ? <div ref={terminalHost} className="terminal-host" /> : (
-          <div className="welcome"><div className="welcome-icon"><Server size={30} /></div><h1>Your servers, one click away</h1><p>Add a server to SSHDeck or import an existing OpenSSH host. Private keys stay managed by OpenSSH.</p></div>
-        )}
-      </section>
+    {draft && <div className="modal-backdrop"><form className="modal" onSubmit={(event) => void save(event)}>
+      <div className="modal-head"><div><h2>{draft.id ? "Edit server" : "Add server"}</h2><p>Stored locally by SSHDeck. Private key contents are never copied.</p></div><button type="button" className="icon-button" onClick={() => setDraft(null)}><X size={16} /></button></div>
+      <label>Name<input required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Production API" /></label>
+      <label>Host<input required value={draft.host} onChange={(e) => setDraft({ ...draft, host: e.target.value })} placeholder="203.0.113.10" /></label>
+      <div className="form-grid"><label>User<input value={draft.user ?? ""} onChange={(e) => setDraft({ ...draft, user: e.target.value || null })} placeholder="deploy" /></label><label>Port<input type="number" min="1" max="65535" value={draft.port} onChange={(e) => setDraft({ ...draft, port: Number(e.target.value) })} /></label></div>
+      <label>Identity file<input value={draft.identityFile ?? ""} onChange={(e) => setDraft({ ...draft, identityFile: e.target.value || null })} placeholder="~/.ssh/id_ed25519" /></label>
+      <label>Group<input value={draft.group ?? ""} onChange={(e) => setDraft({ ...draft, group: e.target.value || null })} placeholder="Production" /></label>
+      <label className="check"><input type="checkbox" checked={draft.favorite} onChange={(e) => setDraft({ ...draft, favorite: e.target.checked })} /> Favorite</label>
+      {draft.sourceAlias && <p>Imported from OpenSSH alias <code>{draft.sourceAlias}</code>. Connections keep using that alias so ProxyJump/Match rules remain effective.</p>}
+      <div className="modal-actions"><button type="button" className="secondary" onClick={() => setDraft(null)}>Cancel</button><button className="primary" type="submit">Save server</button></div>
+    </form></div>}
 
-      {draft && <div className="modal-backdrop"><form className="modal" onSubmit={(event) => void save(event)}>
-        <div className="modal-head"><div><h2>{draft.id ? "Edit server" : "Add server"}</h2><p>Stored locally by SSHDeck. Private key contents are never copied.</p></div><button type="button" className="icon-button" onClick={() => setDraft(null)}><X size={16} /></button></div>
-        <label>Name<input required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Production API" /></label>
-        <label>Host<input required value={draft.host} onChange={(e) => setDraft({ ...draft, host: e.target.value })} placeholder="203.0.113.10" /></label>
-        <div className="form-grid"><label>User<input value={draft.user ?? ""} onChange={(e) => setDraft({ ...draft, user: e.target.value || null })} placeholder="deploy" /></label><label>Port<input type="number" min="1" max="65535" value={draft.port} onChange={(e) => setDraft({ ...draft, port: Number(e.target.value) })} /></label></div>
-        <label>Identity file<input value={draft.identityFile ?? ""} onChange={(e) => setDraft({ ...draft, identityFile: e.target.value || null })} placeholder="~/.ssh/id_ed25519" /></label>
-        <label>Group<input value={draft.group ?? ""} onChange={(e) => setDraft({ ...draft, group: e.target.value || null })} placeholder="Production" /></label>
-        <label className="check"><input type="checkbox" checked={draft.favorite} onChange={(e) => setDraft({ ...draft, favorite: e.target.checked })} /> Favorite</label>
-        <div className="modal-actions"><button type="button" className="secondary" onClick={() => setDraft(null)}>Cancel</button><button className="primary" type="submit">Save server</button></div>
-      </form></div>}
+    {importOpen && <div className="modal-backdrop"><div className="modal import-modal">
+      <div className="modal-head"><div><h2>Import from OpenSSH</h2><p>SSHDeck asks OpenSSH to resolve each host with <code>ssh -G</code>.</p></div><button className="icon-button" onClick={() => setImportOpen(false)}><X size={16} /></button></div>
+      <div className="import-list">{sshHosts.map((alias) => <button key={alias} className="import-row" onClick={() => void importAlias(alias)}><Server size={15} /><span>{alias}</span><Download size={14} /></button>)}{sshHosts.length === 0 && <div className="empty">No literal Host aliases found in ~/.ssh/config.</div>}</div>
+    </div></div>}
 
-      {importOpen && <div className="modal-backdrop"><div className="modal import-modal">
-        <div className="modal-head"><div><h2>Import from OpenSSH</h2><p>SSHDeck asks OpenSSH to resolve each host with <code>ssh -G</code>.</p></div><button className="icon-button" onClick={() => setImportOpen(false)}><X size={16} /></button></div>
-        <div className="import-list">{sshHosts.map((alias) => <button key={alias} className="import-row" onClick={() => void importAlias(alias)}><Server size={15} /><span>{alias}</span><Download size={14} /></button>)}{sshHosts.length === 0 && <div className="empty">No literal Host aliases found in ~/.ssh/config.</div>}</div>
-      </div></div>}
+    {exportServer && <div className="modal-backdrop"><div className="modal">
+      <div className="modal-head"><div><h2>Export to OpenSSH</h2><p>SSHDeck will not modify ~/.ssh/config. Copy this block and add it yourself.</p></div><button className="icon-button" onClick={() => setExportServer(null)}><X size={16} /></button></div>
+      <pre className="config-snippet">{sshSnippet(exportServer)}</pre>
+      <div className="modal-actions"><button className="secondary" onClick={() => setExportServer(null)}>Close</button><button className="primary" onClick={() => void copyExport(exportServer)}><Copy size={14} /> Copy</button></div>
+    </div></div>}
 
-      {error && <div className="toast"><span>{error}</span><button onClick={() => setError(null)}><X size={14} /></button></div>}
-    </main>
-  );
+    {error && <div className="toast"><span>{error}</span><button onClick={() => setError(null)}><X size={14} /></button></div>}
+  </main>;
 }
