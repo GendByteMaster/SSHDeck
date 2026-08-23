@@ -1,5 +1,6 @@
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  color-scheme: dark;
   --apple-bg: #07090c;
   --apple-panel: rgba(18, 22, 28, .86);
   --apple-panel-strong: rgba(22, 27, 34, .96);
@@ -16,6 +17,42 @@ body,
   height: 100%;
   overflow: hidden;
 }
+
+* {
+  scrollbar-color: rgba(255,255,255,.16) transparent;
+  scrollbar-width: thin;
+}
+
+button,
+input,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* WebView2 native decorations are deliberately disabled. SSHDeck renders its own controls. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear,
+input::-ms-reveal,
+input::-ms-clear {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+input[type="password"]::-webkit-credentials-auto-fill-button,
+input[type="password"]::-webkit-contacts-auto-fill-button,
+input[type="password"]::-webkit-caps-lock-indicator {
+  visibility: hidden !important;
+  display: none !important;
+  pointer-events: none !important;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
 
 .app-shell {
   min-height: 100%;
@@ -60,7 +97,6 @@ body,
   color: #0b0e12;
   box-shadow: 0 1px 0 rgba(255,255,255,.7) inset, 0 8px 18px rgba(0,0,0,.18);
 }
-
 .primary:hover { background: #fff; }
 .secondary { background: rgba(255,255,255,.045); border-color: rgba(255,255,255,.09); }
 .secondary:hover { background: rgba(255,255,255,.075); }
@@ -73,9 +109,9 @@ body,
   place-items: center;
   padding: 24px;
   overflow: hidden;
-  background: rgba(0,0,0,.62);
-  backdrop-filter: blur(18px) saturate(120%);
-  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  background: rgba(0,0,0,.64);
+  backdrop-filter: blur(20px) saturate(120%);
+  -webkit-backdrop-filter: blur(20px) saturate(120%);
 }
 
 .modal {
@@ -84,58 +120,80 @@ body,
   padding: 24px;
   overflow: auto;
   overscroll-behavior: contain;
-  scrollbar-width: none;
   border-radius: 20px;
   border: 1px solid var(--apple-border-strong);
-  background: linear-gradient(180deg, rgba(24,29,36,.98), rgba(17,21,27,.98));
+  background: linear-gradient(180deg, rgba(24,29,36,.985), rgba(17,21,27,.985));
   box-shadow: 0 30px 100px rgba(0,0,0,.56), inset 0 1px 0 rgba(255,255,255,.035);
 }
-
-.modal::-webkit-scrollbar { display: none; }
+.modal::-webkit-scrollbar { width: 7px; }
+.modal::-webkit-scrollbar-track { background: transparent; }
+.modal::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 999px; }
 
 .server-editor {
-  width: min(620px, calc(100vw - 48px));
-  padding: 22px 24px 0;
+  width: min(760px, calc(100vw - 48px));
+  max-height: none;
+  overflow: visible;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 16px;
+  row-gap: 0;
+  padding: 24px;
 }
 
-.server-editor .modal-head {
-  position: sticky;
-  top: -22px;
-  z-index: 3;
-  margin: -22px -24px 18px;
-  padding: 22px 24px 16px;
-  background: linear-gradient(180deg, rgba(24,29,36,.995), rgba(24,29,36,.94));
-  border-bottom: 1px solid rgba(255,255,255,.055);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+.server-editor > .modal-head,
+.server-editor > .form-grid,
+.server-editor > .auth-switch,
+.server-editor > .auth-note,
+.server-editor > .modal-actions,
+.server-editor > p,
+.server-editor > label:has(+ .auth-switch) {
+  grid-column: 1 / -1;
 }
 
-.server-editor .modal-actions {
-  position: sticky;
-  bottom: 0;
-  z-index: 3;
-  margin: 18px -24px 0;
-  padding: 14px 24px 18px;
+.server-editor > .modal-head {
+  position: static;
+  margin: 0 0 10px;
+  padding: 0 0 16px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  background: transparent;
+}
+
+.server-editor > .form-grid {
+  grid-template-columns: minmax(0, 1fr) 128px;
+  gap: 12px;
+}
+
+.server-editor > .modal-actions {
+  position: static;
+  margin: 12px 0 0;
+  padding: 16px 0 0;
   border-top: 1px solid rgba(255,255,255,.065);
-  background: linear-gradient(0deg, rgba(17,21,27,.998), rgba(17,21,27,.94));
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: transparent;
 }
 
-.modal h2 { font-size: 22px; letter-spacing: -.025em; }
+.modal h2 { margin: 0; font-size: 22px; letter-spacing: -.025em; }
 .modal p { color: var(--apple-muted); }
-.modal label { color: #c9d0d8; font-size: 12px; }
-.modal label input:not([type=checkbox]), .modal label select {
-  min-height: 42px;
-  padding: 9px 12px;
-  background: rgba(8,11,15,.58);
-  border: 1px solid rgba(255,255,255,.12);
+.modal label {
+  color: #c9d0d8;
+  font-size: 12px;
+  margin: 8px 0;
+  gap: 5px;
+}
+.modal label input:not([type=checkbox]),
+.modal label select {
+  min-height: 40px;
+  padding: 8px 12px;
+  background: rgba(8,11,15,.64);
+  border: 1px solid rgba(255,255,255,.11);
+  outline: none;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.018);
   transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
 }
-.modal label input:focus, .modal label select:focus {
-  border-color: rgba(79,124,255,.9);
-  box-shadow: 0 0 0 3px rgba(79,124,255,.16);
-  background: rgba(8,11,15,.78);
+.modal label input:focus,
+.modal label select:focus {
+  border-color: rgba(79,124,255,.88);
+  box-shadow: 0 0 0 3px rgba(79,124,255,.14);
+  background: rgba(8,11,15,.82);
 }
 
 .auth-switch {
@@ -143,7 +201,7 @@ body,
   grid-template-columns: 1fr 1fr;
   gap: 4px;
   padding: 4px;
-  margin: 8px 0 3px;
+  margin: 4px 0 2px;
   border: 1px solid rgba(255,255,255,.10);
   border-radius: 12px;
   background: rgba(7,10,14,.55);
@@ -165,8 +223,9 @@ body,
   color: #f5f7fa;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 5px 12px rgba(0,0,0,.18);
 }
+
 .auth-note {
-  margin: 6px 2px 10px !important;
+  margin: -1px 2px 4px !important;
   color: #7f8998 !important;
   font-size: 10.5px !important;
 }
@@ -175,32 +234,18 @@ body,
   position: relative;
   display: flex;
   align-items: center;
+  min-width: 0;
 }
 .password-input input {
   width: 100%;
-  padding-right: 46px !important;
-  appearance: none;
-  -webkit-appearance: none;
-}
-
-/* WebView2/Edge adds its own password reveal button. SSHDeck owns this UI. */
-.password-input input::-ms-reveal,
-.password-input input::-ms-clear {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-}
-.password-input input::-webkit-credentials-auto-fill-button,
-.password-input input::-webkit-contacts-auto-fill-button {
-  visibility: hidden !important;
-  display: none !important;
-  pointer-events: none !important;
-  position: absolute !important;
-  right: 0 !important;
+  min-width: 0;
+  padding-right: 42px !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
 }
 .password-input button {
   position: absolute;
-  right: 7px;
+  right: 6px;
   width: 30px;
   height: 30px;
   display: grid;
@@ -216,6 +261,14 @@ body,
   outline: 2px solid rgba(79,124,255,.8);
   outline-offset: 1px;
 }
+
+.server-editor .check {
+  min-height: 40px;
+  align-self: end;
+  margin: 8px 0;
+  padding: 0 4px;
+}
+.check input { accent-color: var(--apple-blue); }
 
 .modal-actions .primary {
   background: linear-gradient(180deg,#5f86ff,#3f6cf6);
@@ -238,18 +291,34 @@ body,
 }
 .danger:hover { background: linear-gradient(180deg,#ff7580,#ef515d); }
 
-.check input { accent-color: var(--apple-blue); }
-
 .terminal-host {
   background: #080a0d;
   padding: 14px 16px;
 }
 
+@media (max-height: 720px) {
+  .modal-backdrop { padding: 12px; }
+  .server-editor {
+    max-height: calc(100vh - 24px);
+    overflow: auto;
+    padding: 18px 20px;
+  }
+  .server-editor::-webkit-scrollbar { width: 6px; }
+  .server-editor::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 999px; }
+  .modal label { margin: 5px 0; }
+  .server-editor > .modal-head { padding-bottom: 10px; margin-bottom: 4px; }
+  .server-editor > .modal-actions { margin-top: 6px; padding-top: 10px; }
+}
+
 @media (max-width: 900px) {
   .modal-backdrop { padding: 12px; }
-  .modal,
-  .server-editor { width: min(600px, calc(100vw - 24px)); }
-  .server-editor { padding-left: 18px; padding-right: 18px; }
-  .server-editor .modal-head { margin-left: -18px; margin-right: -18px; padding-left: 18px; padding-right: 18px; }
-  .server-editor .modal-actions { margin-left: -18px; margin-right: -18px; padding-left: 18px; padding-right: 18px; }
+  .modal { width: min(620px, calc(100vw - 24px)); }
+  .server-editor {
+    width: min(680px, calc(100vw - 24px));
+    grid-template-columns: 1fr;
+    max-height: calc(100vh - 24px);
+    overflow: auto;
+  }
+  .server-editor > * { grid-column: 1 !important; }
+  .server-editor > .form-grid { grid-template-columns: minmax(0,1fr) 110px; }
 }
