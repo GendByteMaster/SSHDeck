@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Activity, Cable, Play, Plus, RefreshCw, Square, TerminalSquare, Trash2, X } from "lucide-react";
+import { Activity, Cable, History, Play, Plus, RefreshCw, Square, TerminalSquare, Trash2, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { formatUptime, ServerStatus } from "./serverStatus";
+import { formatDuration, SessionHistoryItem, SessionView } from "./sessionLifecycle";
 
 type Server = { id: string; name: string; group: string | null };
 type QuickCommand = { id: string; name: string; command: string; serverId: string | null; group: string | null };
@@ -20,22 +21,33 @@ type WorkspaceData = { quickCommands: QuickCommand[]; tunnels: Tunnel[] };
 
 type Props = {
   servers: Server[];
-  activeSessionId: string | null;
+  activeSession: SessionView | null;
   activeServerId: string | null;
   activeStatus: ServerStatus | null;
   statusChecking: boolean;
+  sessionHistory: SessionHistoryItem[];
+  onToggleAutoReconnect: () => void;
   onRefreshStatus: () => Promise<void>;
   onError: (error: string) => void;
 };
 
 const emptyWorkspace: WorkspaceData = { quickCommands: [], tunnels: [] };
 
-export function ToolsPanel({ servers, activeSessionId, activeServerId, activeStatus, statusChecking, onRefreshStatus, onError }: Props) {
+function sessionLabel(session: SessionView | null) {
+  if (!session) return "Closed";
+  if (session.state === "active") return "Active";
+  if (session.state === "reconnecting") return `Reconnecting ${session.reconnectAttempts}/3`;
+  if (session.state === "disconnected") return "Disconnected";
+  return "Failed";
+}
+
+export function ToolsPanel({ servers, activeSession, activeServerId, activeStatus, statusChecking, sessionHistory, onToggleAutoReconnect, onRefreshStatus, onError }: Props) {
   const [data, setData] = useState<WorkspaceData>(emptyWorkspace);
   const [activeTunnels, setActiveTunnels] = useState<string[]>([]);
   const [quickOpen, setQuickOpen] = useState(false);
   const [tunnelOpen, setTunnelOpen] = useState(false);
   const activeServer = servers.find((server) => server.id === activeServerId) ?? null;
+  const sessionUsable = activeSession?.state === "active";
 
   async function refresh() {
     const [workspace, running] = await Promise.all([
@@ -56,10 +68,15 @@ export function ToolsPanel({ servers, activeSessionId, activeServerId, activeSta
     return true;
   }), [data.quickCommands, activeServerId, activeServer?.group]);
 
+  const visibleHistory = useMemo(
+    () => sessionHistory.filter((item) => !activeServerId || item.serverId === activeServerId).slice(0, 5),
+    [sessionHistory, activeServerId],
+  );
+
   async function runCommand(id: string) {
-    if (!activeSessionId) return onError("Open a server session before running a Quick Command.");
+    if (!activeSession || !sessionUsable) return onError("Open an active server session before running a Quick Command.");
     try {
-      await invoke("run_quick_command", { sessionId: activeSessionId, commandId: id });
+      await invoke("run_quick_command", { sessionId: activeSession.id, commandId: id });
     } catch (value) { onError(String(value)); }
   }
 
@@ -91,21 +108,37 @@ export function ToolsPanel({ servers, activeSessionId, activeServerId, activeSta
       {activeServer ? <div className="status-card">
         <div className="status-summary"><span className={`status-dot ${statusState}`} /><div><strong>{activeServer.name}</strong><small>{statusLabel}</small></div></div>
         <div className="status-grid">
-          <div><span>Session</span><strong>{activeSessionId ? "Open" : "Closed"}</strong></div>
+          <div><span>Session</span><strong>{sessionLabel(activeSession)}</strong></div>
+          <div><span>Duration</span><strong>{activeSession ? formatDuration(activeSession.durationMs) : "—"}</strong></div>
+          <div><span>Exit code</span><strong>{activeSession?.exitCode ?? "—"}</strong></div>
           <div><span>SSH probe</span><strong>{activeStatus?.latencyMs != null ? `${activeStatus.latencyMs} ms` : "—"}</strong></div>
           <div><span>Authentication</span><strong>{activeStatus?.sshOk ? "Verified" : activeStatus?.state === "auth_required" ? "Required" : "—"}</strong></div>
           <div><span>Uptime</span><strong>{formatUptime(activeStatus?.uptimeSeconds ?? null)}</strong></div>
         </div>
+        {activeSession && <button className={`auto-reconnect ${activeSession.autoReconnect ? "enabled" : ""}`} onClick={onToggleAutoReconnect}><span className="status-dot" /> Auto reconnect {activeSession.autoReconnect ? "on" : "off"}</button>}
+        {activeSession?.signal && <p className="status-error">Signal: {activeSession.signal}</p>}
         {activeStatus?.error && <p className="status-error" title={activeStatus.error}>{activeStatus.error}</p>}
-        <p className="status-note">Status uses an authenticated OpenSSH probe, not ICMP ping.</p>
+        <p className="status-note">Server health comes from an authenticated OpenSSH probe. Session state comes from the real SSH child process.</p>
       </div> : <p className="tool-empty">Open a server to inspect its SSH status.</p>}
+    </section>
+
+    <section className="tool-section history-section">
+      <div className="tool-heading"><div><History size={14} /><strong>Connection History</strong></div></div>
+      <div className="history-list">
+        {visibleHistory.map((item) => <div className="history-item" key={item.id}>
+          <span className={`session-dot ${item.state === "failed" ? "failed" : item.state === "reconnected" ? "active" : "disconnected"}`} />
+          <div><strong>{item.state}</strong><small>{item.serverName} · {formatDuration(item.durationMs)}{item.exitCode != null ? ` · exit ${item.exitCode}` : ""}</small></div>
+          <time>{new Date(item.atMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
+        </div>)}
+        {visibleHistory.length === 0 && <p className="tool-empty">No session events yet.</p>}
+      </div>
     </section>
 
     <section className="tool-section">
       <div className="tool-heading"><div><TerminalSquare size={14} /><strong>Quick Commands</strong></div><button onClick={() => setQuickOpen(true)} title="Add command"><Plus size={14} /></button></div>
       <div className="tool-list">
         {visibleCommands.map((item) => <div className="tool-item" key={item.id}>
-          <button className="tool-run" onClick={() => void runCommand(item.id)} disabled={!activeSessionId}><Play size={12} /><span><strong>{item.name}</strong><small>{item.command}</small></span></button>
+          <button className="tool-run" onClick={() => void runCommand(item.id)} disabled={!sessionUsable}><Play size={12} /><span><strong>{item.name}</strong><small>{item.command}</small></span></button>
           <button className="tool-delete" onClick={() => void deleteCommand(item.id)}><Trash2 size={12} /></button>
         </div>)}
         {visibleCommands.length === 0 && <p className="tool-empty">No commands for this server.</p>}
