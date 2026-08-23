@@ -36,7 +36,8 @@ pub enum TunnelKind {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]\pub struct WorkspaceData {
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceData {
     #[serde(default)]
     pub quick_commands: Vec<QuickCommand>,
     #[serde(default)]
