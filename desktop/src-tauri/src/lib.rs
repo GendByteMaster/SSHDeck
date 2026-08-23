@@ -1,3 +1,5 @@
+mod status;
+
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::process::{Child as ProcessChild, Command};
@@ -42,6 +44,12 @@ fn list_servers() -> Result<Vec<ServerRecord>, String> {
     ServerRegistry::load_default()
         .and_then(|registry| registry.list())
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn server_status(server_id: String) -> Result<status::ServerStatus, String> {
+    let server = find_server(&server_id)?;
+    Ok(status::probe(&server))
 }
 
 #[tauri::command]
@@ -483,6 +491,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_hosts,
             list_servers,
+            server_status,
             save_server,
             delete_server,
             import_ssh_host,
