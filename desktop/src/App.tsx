@@ -183,9 +183,10 @@ export function App() {
             return;
           }
 
+          const endedState: "disconnected" | "failed" = status.state === "failed" ? "failed" : "disconnected";
           setTabs((current) => current.map((item) => item.id === tab.id ? {
             ...item,
-            state: status.state,
+            state: endedState,
             durationMs: status.durationMs,
             exitCode: status.exitCode,
             signal: status.signal,
@@ -193,12 +194,12 @@ export function App() {
           appendHistory({
             serverId: tab.serverId,
             serverName: tab.name,
-            state: status.state,
+            state: endedState,
             atMs: status.endedAtMs ?? Date.now(),
             durationMs: status.durationMs,
             exitCode: status.exitCode,
           });
-          if (status.state === "failed" && tab.autoReconnect && tab.reconnectAttempts < 3) {
+          if (endedState === "failed" && tab.autoReconnect && tab.reconnectAttempts < 3) {
             void autoReconnect({ ...tab, state: "failed", durationMs: status.durationMs, exitCode: status.exitCode, signal: status.signal });
           }
         } catch (value) {
