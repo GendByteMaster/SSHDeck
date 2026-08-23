@@ -7,13 +7,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 type TerminalOutput = { sessionId: string; data: number[] };
 type SessionTab = { id: string; host: string };
+type TerminalEntry = { terminal: Terminal; fit: FitAddon; element: HTMLDivElement };
 
 export function App() {
   const [hosts, setHosts] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [tabs, setTabs] = useState<SessionTab[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const terminals = useRef(new Map<string, { terminal: Terminal; fit: FitAddon }>());
+  const terminals = useRef(new Map<string, TerminalEntry>());
   const terminalHost = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -33,6 +34,8 @@ export function App() {
 
     let entry = terminals.current.get(activeId);
     if (!entry) {
+      const element = document.createElement("div");
+      element.className = "terminal-instance";
       const terminal = new Terminal({
         cursorBlink: true,
         fontFamily: "JetBrains Mono, Cascadia Code, ui-monospace, monospace",
@@ -41,12 +44,13 @@ export function App() {
       });
       const fit = new FitAddon();
       terminal.loadAddon(fit);
-      entry = { terminal, fit };
-      terminals.current.set(activeId, entry);
+      terminal.open(element);
       terminal.onData((data) => void invoke("terminal_write", { sessionId: activeId, data }));
+      entry = { terminal, fit, element };
+      terminals.current.set(activeId, entry);
     }
 
-    entry.terminal.open(terminalHost.current);
+    terminalHost.current.appendChild(entry.element);
     entry.fit.fit();
     void invoke("terminal_resize", { sessionId: activeId, rows: entry.terminal.rows, cols: entry.terminal.cols });
 
