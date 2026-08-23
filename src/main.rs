@@ -31,7 +31,7 @@ enum Command {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let config = SshConfig::load_default()?;
-    let client = SshClient::default();
+    let client = SshClient;
 
     match cli.command {
         Command::List => {
