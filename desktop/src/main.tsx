@@ -4,6 +4,11 @@ import "./styles.css";
 import "./sessionLifecycle.css";
 import "./apple.css";
 import "./performance.css";
+import "./keyboard.css";
 import { App } from "./App";
+import { installKeyboardNavigation } from "./keyboard";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(<App />);
+
+const uninstallKeyboardNavigation = installKeyboardNavigation();
+window.addEventListener("beforeunload", uninstallKeyboardNavigation, { once: true });
