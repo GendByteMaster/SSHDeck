@@ -2,7 +2,22 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
-import { Clock3, Copy, Download, Eye, EyeOff, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, Search, Server, Star, Trash2, X } from "lucide-react";
+import {
+  Copy,
+  Download,
+  Eye,
+  EyeOff,
+  KeyRound,
+  LockKeyhole,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Server,
+  Star,
+  Trash2,
+  X,
+} from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ToolsPanel } from "./ToolsPanel";
 import { useServerStatus } from "./serverStatus";
@@ -32,9 +47,18 @@ type ServerDraft = Omit<ServerRecord, "lastConnectedAt"> & { lastConnectedAt?: n
 type AuthMode = "key" | "password";
 
 const emptyDraft: ServerDraft = {
-  id: "", name: "", host: "", user: null, port: 22, identityFile: null,
-  group: null, favorite: false, sourceAlias: null,
+  id: "",
+  name: "",
+  host: "",
+  user: null,
+  port: 22,
+  identityFile: null,
+  group: null,
+  favorite: false,
+  sourceAlias: null,
 };
+
+const decoder = new TextDecoder();
 
 export function App() {
   const [servers, setServers] = useState<ServerRecord[]>([]);
@@ -49,15 +73,19 @@ export function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [exportServer, setExportServer] = useState<ServerRecord | null>(null);
+  const [deleteServer, setDeleteServer] = useState<ServerRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
+
   const terminals = useRef(new Map<string, TerminalEntry>());
   const terminalHost = useRef<HTMLDivElement | null>(null);
   const tabsRef = useRef<SessionView[]>([]);
   const serversRef = useRef<ServerRecord[]>([]);
   const reconnecting = useRef(new Set<string>());
-  const passwordsByServer = useRef(new Map<string, string>());
-  const serverBySession = useRef(new Map<string, string>());
-  const passwordSentForSession = useRef(new Set<string>());
+  const pendingOutput = useRef(new Map<string, Uint8Array[]>());
+  const recentOutputText = useRef(new Map<string, string>());
+  const sessionServer = useRef(new Map<string, string>());
+  const sessionPasswords = useRef(new Map<string, string>());
+  const passwordSent = useRef(new Set<string>());
   const { statuses, checking, refreshServer } = useServerStatus(servers);
 
   useEffect(() => { tabsRef.current = tabs; }, [tabs]);
@@ -76,25 +104,42 @@ export function App() {
   }
 
   useEffect(() => {
-    void Promise.all([refreshServers(), invoke<string[]>("list_hosts").then(setSshHosts)]).catch((value) => setError(String(value)));
+    void Promise.all([
+      refreshServers(),
+      invoke<string[]>("list_hosts").then(setSshHosts),
+    ]).catch((value) => setError(String(value)));
   }, []);
 
+  function maybeSendPassword(sessionId: string) {
+    if (passwordSent.current.has(sessionId)) return;
+    const serverId = sessionServer.current.get(sessionId);
+    if (!serverId) return;
+    const password = sessionPasswords.current.get(serverId);
+    if (!password) return;
+    const text = recentOutputText.current.get(sessionId)?.toLowerCase() ?? "";
+    if (!/(password|passphrase).*:\s*$/.test(text.slice(-300))) return;
+    passwordSent.current.add(sessionId);
+    void invoke("terminal_write", { sessionId, data: `${password}\n` }).catch((value) => {
+      passwordSent.current.delete(sessionId);
+      setError(`Could not send SSH password: ${String(value)}`);
+    });
+  }
+
   useEffect(() => {
-    const decoder = new TextDecoder();
     const unlisten = listen<TerminalOutput>("terminal-output", ({ payload }) => {
-      const bytes = new Uint8Array(payload.data);
-      terminals.current.get(payload.sessionId)?.terminal.write(bytes);
+      const chunk = new Uint8Array(payload.data);
+      const text = decoder.decode(chunk, { stream: true });
+      const previous = recentOutputText.current.get(payload.sessionId) ?? "";
+      recentOutputText.current.set(payload.sessionId, (previous + text).slice(-1200));
 
-      const serverId = serverBySession.current.get(payload.sessionId);
-      if (!serverId || passwordSentForSession.current.has(payload.sessionId)) return;
-      const password = passwordsByServer.current.get(serverId);
-      if (!password) return;
-
-      const text = decoder.decode(bytes).toLowerCase();
-      if (text.includes("password:")) {
-        passwordSentForSession.current.add(payload.sessionId);
-        void invoke("terminal_write", { sessionId: payload.sessionId, data: `${password}\n` });
+      const entry = terminals.current.get(payload.sessionId);
+      if (entry) entry.terminal.write(chunk);
+      else {
+        const queued = pendingOutput.current.get(payload.sessionId) ?? [];
+        queued.push(chunk);
+        pendingOutput.current.set(payload.sessionId, queued.slice(-100));
       }
+      maybeSendPassword(payload.sessionId);
     });
     return () => void unlisten.then((fn) => fn());
   }, []);
@@ -108,9 +153,18 @@ export function App() {
       element.className = "terminal-instance";
       const terminal = new Terminal({
         cursorBlink: true,
+        cursorStyle: "bar",
         fontFamily: "JetBrains Mono, Cascadia Code, ui-monospace, monospace",
         fontSize: 14,
-        theme: { background: "#0b0d10", foreground: "#e8ebf0", cursor: "#e8ebf0" },
+        lineHeight: 1.25,
+        theme: {
+          background: "#080a0d",
+          foreground: "#e8edf4",
+          cursor: "#6b8cff",
+          selectionBackground: "#294073",
+          black: "#171a20",
+          brightBlack: "#697386",
+        },
       });
       const fit = new FitAddon();
       terminal.loadAddon(fit);
@@ -118,13 +172,31 @@ export function App() {
       terminal.onData((data) => void invoke("terminal_write", { sessionId: activeId, data }));
       entry = { terminal, fit, element };
       terminals.current.set(activeId, entry);
+
+      const queued = pendingOutput.current.get(activeId) ?? [];
+      for (const chunk of queued) terminal.write(chunk);
+      pendingOutput.current.delete(activeId);
+      maybeSendPassword(activeId);
     }
+
     terminalHost.current.appendChild(entry.element);
     entry.fit.fit();
-    void invoke("terminal_resize", { sessionId: activeId, rows: entry.terminal.rows, cols: entry.terminal.cols });
+    void invoke("terminal_resize", {
+      sessionId: activeId,
+      rows: entry.terminal.rows,
+      cols: entry.terminal.cols,
+    });
+    entry.terminal.focus();
+
     const resize = () => {
       entry?.fit.fit();
-      if (entry) void invoke("terminal_resize", { sessionId: activeId, rows: entry.terminal.rows, cols: entry.terminal.cols });
+      if (entry) {
+        void invoke("terminal_resize", {
+          sessionId: activeId,
+          rows: entry.terminal.rows,
+          cols: entry.terminal.cols,
+        });
+      }
     };
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
@@ -132,8 +204,8 @@ export function App() {
 
   async function startSession(server: ServerRecord, autoReconnect = true, reconnectAttempts = 0) {
     const id = await invoke<string>("terminal_start_server", { serverId: server.id });
-    serverBySession.current.set(id, server.id);
-    passwordSentForSession.current.delete(id);
+    sessionServer.current.set(id, server.id);
+    maybeSendPassword(id);
     const status = await invoke<SessionProcessStatus>("terminal_session_status", { sessionId: id });
     return {
       id,
@@ -155,8 +227,8 @@ export function App() {
     try {
       terminals.current.get(tab.id)?.terminal.dispose();
       terminals.current.delete(tab.id);
-      serverBySession.current.delete(tab.id);
-      passwordSentForSession.current.delete(tab.id);
+      sessionServer.current.delete(tab.id);
+      passwordSent.current.delete(tab.id);
       await invoke("terminal_close", { sessionId: tab.id }).catch(() => undefined);
 
       let attempt = tab.reconnectAttempts;
@@ -165,28 +237,17 @@ export function App() {
         if (!tabsRef.current.some((item) => item.id === tab.id)) return;
         setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, state: "reconnecting", reconnectAttempts: attempt } : item));
         await new Promise((resolve) => window.setTimeout(resolve, 1000 * (2 ** (attempt - 1))));
-
         const server = serversRef.current.find((item) => item.id === tab.serverId);
         if (!server || !tabsRef.current.some((item) => item.id === tab.id)) return;
         try {
           const replacement = await startSession(server, tab.autoReconnect, attempt);
           setTabs((current) => current.map((item) => item.id === tab.id ? replacement : item));
           setActiveId((current) => current === tab.id ? replacement.id : current);
-          appendHistory({
-            serverId: server.id,
-            serverName: server.name,
-            state: "reconnected",
-            atMs: Date.now(),
-            durationMs: 0,
-            exitCode: null,
-          });
+          appendHistory({ serverId: server.id, serverName: server.name, state: "reconnected", atMs: Date.now(), durationMs: 0, exitCode: null });
           void refreshServer(server.id).catch(() => undefined);
           return;
         } catch (value) {
-          if (attempt >= 3) {
-            setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, state: "failed", reconnectAttempts: attempt } : item));
-            setError(`Auto-reconnect failed after ${attempt} attempts: ${String(value)}`);
-          }
+          if (attempt >= 3) setError(`Auto-reconnect failed after ${attempt} attempts: ${String(value)}`);
         }
       }
     } finally {
@@ -206,7 +267,6 @@ export function App() {
             setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, durationMs: status.durationMs } : item));
             return;
           }
-
           const endedState: "disconnected" | "failed" = status.state === "failed" ? "failed" : "disconnected";
           setTabs((current) => current.map((item) => item.id === tab.id ? {
             ...item,
@@ -237,20 +297,19 @@ export function App() {
   }, []);
 
   const filtered = useMemo(() => {
-    const needle = query.toLowerCase();
+    const needle = query.toLowerCase().trim();
     return servers.filter((server) => [server.name, server.host, server.group ?? ""].some((value) => value.toLowerCase().includes(needle)));
   }, [servers, query]);
-
   const favorites = filtered.filter((server) => server.favorite);
-  const recents = [...filtered].filter((server) => server.lastConnectedAt).sort((a, b) => (b.lastConnectedAt ?? 0) - (a.lastConnectedAt ?? 0)).slice(0, 5);
+  const nonFavorites = filtered.filter((server) => !server.favorite);
   const groups = useMemo(() => {
     const map = new Map<string, ServerRecord[]>();
-    for (const server of filtered) {
-      const key = server.group?.trim() || "Ungrouped";
+    for (const server of nonFavorites) {
+      const key = server.group?.trim() || "Servers";
       map.set(key, [...(map.get(key) ?? []), server]);
     }
     return [...map.entries()];
-  }, [filtered]);
+  }, [nonFavorites]);
   const activeTab = tabs.find((tab) => tab.id === activeId) ?? null;
   const activeStatus = activeTab ? statuses[activeTab.serverId] ?? null : null;
 
@@ -273,8 +332,8 @@ export function App() {
       await invoke("terminal_close", { sessionId: tab.id });
       terminals.current.get(tab.id)?.terminal.dispose();
       terminals.current.delete(tab.id);
-      serverBySession.current.delete(tab.id);
-      passwordSentForSession.current.delete(tab.id);
+      sessionServer.current.delete(tab.id);
+      passwordSent.current.delete(tab.id);
       const replacement = await startSession(server, tab.autoReconnect, 0);
       setTabs((value) => value.map((item) => item.id === tab.id ? replacement : item));
       setActiveId(replacement.id);
@@ -288,18 +347,13 @@ export function App() {
     await invoke("terminal_close", { sessionId: id });
     terminals.current.get(id)?.terminal.dispose();
     terminals.current.delete(id);
-    serverBySession.current.delete(id);
-    passwordSentForSession.current.delete(id);
-    if (tab) appendHistory({
-      serverId: tab.serverId,
-      serverName: tab.name,
-      state: "closed",
-      atMs: Date.now(),
-      durationMs: tab.durationMs,
-      exitCode: tab.exitCode,
-    });
+    pendingOutput.current.delete(id);
+    recentOutputText.current.delete(id);
+    sessionServer.current.delete(id);
+    passwordSent.current.delete(id);
+    if (tab) appendHistory({ serverId: tab.serverId, serverName: tab.name, state: "closed", atMs: Date.now(), durationMs: tab.durationMs, exitCode: tab.exitCode });
     setTabs((value) => {
-      const next = value.filter((tab) => tab.id !== id);
+      const next = value.filter((item) => item.id !== id);
       if (activeId === id) setActiveId(next.at(-1)?.id ?? null);
       return next;
     });
@@ -319,20 +373,25 @@ export function App() {
         lastConnectedAt: draft.lastConnectedAt ?? null,
       };
       const saved = await invoke<ServerRecord>("save_server", { server });
-      if (authMode === "password" && draftPassword) passwordsByServer.current.set(saved.id, draftPassword);
-      if (authMode === "key") passwordsByServer.current.delete(saved.id);
-      setDraftPassword("");
-      setShowPassword(false);
+      if (authMode === "password") {
+        if (draftPassword) sessionPasswords.current.set(saved.id, draftPassword);
+      } else {
+        sessionPasswords.current.delete(saved.id);
+      }
       setDraft(null);
+      setDraftPassword("");
       await refreshServers();
     } catch (value) { setError(String(value)); }
   }
 
-  async function remove(server: ServerRecord) {
-    if (!window.confirm(`Delete ${server.name} from SSHDeck?`)) return;
-    await invoke("delete_server", { id: server.id });
-    passwordsByServer.current.delete(server.id);
-    await refreshServers();
+  async function confirmDelete() {
+    if (!deleteServer) return;
+    try {
+      await invoke("delete_server", { id: deleteServer.id });
+      sessionPasswords.current.delete(deleteServer.id);
+      setDeleteServer(null);
+      await refreshServers();
+    } catch (value) { setError(String(value)); }
   }
 
   async function toggleFavorite(server: ServerRecord) {
@@ -369,14 +428,12 @@ export function App() {
   function openNewServer() {
     setAuthMode("key");
     setDraftPassword("");
-    setShowPassword(false);
     setDraft({ ...emptyDraft });
   }
 
   function openEditServer(server: ServerRecord) {
     setAuthMode(server.identityFile ? "key" : "password");
-    setDraftPassword("");
-    setShowPassword(false);
+    setDraftPassword(sessionPasswords.current.get(server.id) ?? "");
     setDraft({ ...server });
   }
 
@@ -386,13 +443,16 @@ export function App() {
     return <div className="server-row-wrap">
       <button className="server-row" onClick={() => void connect(server)}>
         <span className={`status-dot ${state}`} /><Server size={15} />
-        <span className="server-copy"><strong>{server.name}</strong><small>{server.user ? `${server.user}@` : ""}{server.host}:{server.port}{status?.latencyMs != null ? ` · ${status.latencyMs} ms` : ""}</small></span>
+        <span className="server-copy">
+          <strong>{server.name}</strong>
+          <small>{server.user ? `${server.user}@` : ""}{server.host}:{server.port}{status?.latencyMs != null ? ` · ${status.latencyMs} ms` : ""}</small>
+        </span>
       </button>
       <div className="row-actions">
         <button title="Favorite" onClick={() => void toggleFavorite(server)}><Star size={13} fill={server.favorite ? "currentColor" : "none"} /></button>
         <button title="Export OpenSSH snippet" onClick={() => setExportServer(server)}><Copy size={13} /></button>
         <button title="Edit" onClick={() => openEditServer(server)}><Pencil size={13} /></button>
-        <button title="Delete" onClick={() => void remove(server)}><Trash2 size={13} /></button>
+        <button title="Delete" onClick={() => setDeleteServer(server)}><Trash2 size={13} /></button>
       </div>
     </div>;
   }
@@ -404,12 +464,11 @@ export function App() {
         <button className="primary" onClick={openNewServer}><Plus size={15} /> Add server</button>
         <button className="secondary" onClick={() => setImportOpen(true)}><Download size={15} /> Import SSH</button>
       </div>
-      <div className="search"><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search servers" /></div>
+      <div className="search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search servers" /></div>
       <div className="server-list">
-        {favorites.length > 0 && <><div className="section-label">FAVORITES</div>{favorites.map((server) => <ServerRow key={`fav-${server.id}`} server={server} />)}</>}
-        {recents.length > 0 && <><div className="section-label"><Clock3 size={11} /> RECENT</div>{recents.map((server) => <ServerRow key={`recent-${server.id}`} server={server} />)}</>}
+        {favorites.length > 0 && <><div className="section-label">FAVORITES</div>{favorites.map((server) => <ServerRow key={server.id} server={server} />)}</>}
         {groups.map(([group, items]) => <div key={group}><div className="section-label">{group.toUpperCase()}</div>{items.map((server) => <ServerRow key={server.id} server={server} />)}</div>)}
-        {filtered.length === 0 && <div className="empty">No SSHDeck servers yet. Add one or import from OpenSSH.</div>}
+        {filtered.length === 0 && <div className="empty">No servers yet. Add one or import your OpenSSH config.</div>}
       </div>
     </aside>
 
@@ -419,7 +478,7 @@ export function App() {
         <RefreshCw size={12} className={tab.state === "reconnecting" ? "spin" : ""} onClick={(event) => { event.stopPropagation(); void reconnect(tab); }} />
         <X size={13} onClick={(event) => { event.stopPropagation(); void closeTab(tab.id); }} />
       </button>)}</div></header>
-      {activeId ? <div ref={terminalHost} className="terminal-host" /> : <div className="welcome"><div className="welcome-icon"><Server size={30} /></div><h1>Your servers, one click away</h1><p>Add a server to SSHDeck or import an existing OpenSSH host. Authentication remains handled by OpenSSH.</p></div>}
+      {activeId ? <div ref={terminalHost} className="terminal-host" /> : <div className="welcome"><div className="welcome-icon"><Server size={30} /></div><h1>Your servers, one click away</h1><p>Select a server to open a real PTY-backed OpenSSH session.</p></div>}
     </section>
 
     <ToolsPanel
@@ -435,38 +494,40 @@ export function App() {
     />
 
     {draft && <div className="modal-backdrop"><form className="modal server-editor" onSubmit={(event) => void save(event)}>
-      <div className="modal-head"><div><h2>{draft.id ? "Edit Server" : "Add Server"}</h2><p>Connection metadata is stored locally. SSHDeck never copies private key contents.</p></div><button type="button" className="icon-button" onClick={() => setDraft(null)}><X size={18} /></button></div>
-      <label>Name<input autoFocus required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Production API" /></label>
-      <label>Host<input required value={draft.host} onChange={(e) => setDraft({ ...draft, host: e.target.value })} placeholder="203.0.113.10" /></label>
-      <div className="form-grid"><label>User<input value={draft.user ?? ""} onChange={(e) => setDraft({ ...draft, user: e.target.value || null })} placeholder="deploy" /></label><label>Port<input type="number" min="1" max="65535" value={draft.port} onChange={(e) => setDraft({ ...draft, port: Number(e.target.value) })} /></label></div>
-
+      <div className="modal-head"><div><h2>{draft.id ? "Edit Server" : "Add Server"}</h2><p>Connection metadata is local. Passwords are kept in memory only for this app session.</p></div><button type="button" className="icon-button" onClick={() => setDraft(null)}><X size={18} /></button></div>
+      <label>Name<input autoFocus required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Production API" /></label>
+      <label>Host<input required value={draft.host} onChange={(event) => setDraft({ ...draft, host: event.target.value })} placeholder="203.0.113.10" /></label>
+      <div className="form-grid"><label>User<input value={draft.user ?? ""} onChange={(event) => setDraft({ ...draft, user: event.target.value || null })} placeholder="deploy" /></label><label>Port<input type="number" min="1" max="65535" value={draft.port} onChange={(event) => setDraft({ ...draft, port: Number(event.target.value) })} /></label></div>
       <label>Authentication</label>
-      <div className="auth-switch" role="group" aria-label="Authentication method">
+      <div className="auth-switch">
         <button type="button" className={authMode === "key" ? "active" : ""} onClick={() => setAuthMode("key")}><KeyRound size={15} /> SSH Key</button>
         <button type="button" className={authMode === "password" ? "active" : ""} onClick={() => setAuthMode("password")}><LockKeyhole size={15} /> Password</button>
       </div>
-
       {authMode === "key" ? <>
-        <label>Identity file<input value={draft.identityFile ?? ""} onChange={(e) => setDraft({ ...draft, identityFile: e.target.value || null })} placeholder="~/.ssh/id_ed25519" /></label>
-        <p className="auth-note">The key stays managed by OpenSSH, ssh-agent, or your hardware-backed agent.</p>
+        <label>Identity file<input value={draft.identityFile ?? ""} onChange={(event) => setDraft({ ...draft, identityFile: event.target.value || null })} placeholder="~/.ssh/id_ed25519" /></label>
+        <p className="auth-note">SSHDeck passes only the path to OpenSSH. Key contents are never copied.</p>
       </> : <>
-        <label>Password<div className="password-input"><input type={showPassword ? "text" : "password"} value={draftPassword} onChange={(e) => setDraftPassword(e.target.value)} placeholder="Enter password for this app session" autoComplete="off" /><button type="button" onClick={() => setShowPassword((value) => !value)} title={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={15} /> : <Eye size={15} />}</button></div></label>
-        <div className="password-card"><strong>Session-only secret.</strong><br />The password is kept only in SSHDeck memory and is automatically sent when OpenSSH shows a password prompt. It is never written to <code>servers.json</code> and is forgotten when the app closes. Leave it empty to type the password manually in the terminal.</div>
+        <label>Password<div className="password-input"><input type={showPassword ? "text" : "password"} value={draftPassword} onChange={(event) => setDraftPassword(event.target.value)} placeholder="Enter password for this app session" /><button type="button" onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff size={15} /> : <Eye size={15} />}</button></div></label>
+        <p className="auth-note">Not written to servers.json. SSHDeck sends it only after OpenSSH emits a password prompt.</p>
       </>}
-
-      <label>Group<input value={draft.group ?? ""} onChange={(e) => setDraft({ ...draft, group: e.target.value || null })} placeholder="Production" /></label>
-      <label className="check"><input type="checkbox" checked={draft.favorite} onChange={(e) => setDraft({ ...draft, favorite: e.target.checked })} /> Favorite</label>
-      {draft.sourceAlias && <p>Imported from OpenSSH alias <code>{draft.sourceAlias}</code>. Connections keep using that alias so ProxyJump/Match rules remain effective.</p>}
+      <label>Group<input value={draft.group ?? ""} onChange={(event) => setDraft({ ...draft, group: event.target.value || null })} placeholder="Production" /></label>
+      <label className="check"><input type="checkbox" checked={draft.favorite} onChange={(event) => setDraft({ ...draft, favorite: event.target.checked })} /> Favorite</label>
+      {draft.sourceAlias && <p>Imported from OpenSSH alias <code>{draft.sourceAlias}</code>. Connections keep using that alias.</p>}
       <div className="modal-actions"><button type="button" className="secondary" onClick={() => setDraft(null)}>Cancel</button><button className="primary" type="submit">Save server</button></div>
     </form></div>}
 
+    {deleteServer && <div className="modal-backdrop"><div className="modal confirm-modal">
+      <div className="modal-head"><div><h2>Delete server?</h2><p><strong>{deleteServer.name}</strong> will be removed from SSHDeck. Your OpenSSH config and keys are untouched.</p></div><button className="icon-button" onClick={() => setDeleteServer(null)}><X size={16} /></button></div>
+      <div className="modal-actions"><button className="secondary" onClick={() => setDeleteServer(null)}>Cancel</button><button className="danger" onClick={() => void confirmDelete()}>Delete server</button></div>
+    </div></div>}
+
     {importOpen && <div className="modal-backdrop"><div className="modal import-modal">
-      <div className="modal-head"><div><h2>Import from OpenSSH</h2><p>SSHDeck asks OpenSSH to resolve each host with <code>ssh -G</code>.</p></div><button className="icon-button" onClick={() => setImportOpen(false)}><X size={16} /></button></div>
+      <div className="modal-head"><div><h2>Import from OpenSSH</h2><p>SSHDeck resolves each alias with <code>ssh -G</code>.</p></div><button className="icon-button" onClick={() => setImportOpen(false)}><X size={16} /></button></div>
       <div className="import-list">{sshHosts.map((alias) => <button key={alias} className="import-row" onClick={() => void importAlias(alias)}><Server size={15} /><span>{alias}</span><Download size={14} /></button>)}{sshHosts.length === 0 && <div className="empty">No literal Host aliases found in ~/.ssh/config.</div>}</div>
     </div></div>}
 
     {exportServer && <div className="modal-backdrop"><div className="modal">
-      <div className="modal-head"><div><h2>Export to OpenSSH</h2><p>SSHDeck will not modify ~/.ssh/config. Copy this block and add it yourself.</p></div><button className="icon-button" onClick={() => setExportServer(null)}><X size={16} /></button></div>
+      <div className="modal-head"><div><h2>Export to OpenSSH</h2><p>SSHDeck never edits ~/.ssh/config automatically.</p></div><button className="icon-button" onClick={() => setExportServer(null)}><X size={16} /></button></div>
       <pre className="config-snippet">{sshSnippet(exportServer)}</pre>
       <div className="modal-actions"><button className="secondary" onClick={() => setExportServer(null)}>Close</button><button className="primary" onClick={() => void copyExport(exportServer)}><Copy size={14} /> Copy</button></div>
     </div></div>}
