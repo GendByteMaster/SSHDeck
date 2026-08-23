@@ -120,42 +120,30 @@
   color: #7f8998 !important;
   font-size: 10.5px !important;
 }
+
 .password-input {
   position: relative;
+  display: flex;
+  align-items: center;
 }
 .password-input input {
-  padding-right: 46px !important;
+  width: 100%;
+  padding-right: 44px !important;
 }
 .password-input button {
   position: absolute;
-  right: 7px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: 8px;
+  right: 8px;
+  width: 30px;
+  height: 30px;
   display: grid;
   place-items: center;
-  color: #8f99a7;
+  border: 0;
+  border-radius: 8px;
   background: transparent;
+  color: #7f8998;
   cursor: pointer;
 }
-.password-input button:hover {
-  color: #f5f7fa;
-  background: rgba(255,255,255,.07);
-}
-.password-card {
-  margin: 10px 0 12px;
-  padding: 12px 13px;
-  border: 1px solid rgba(79,124,255,.20);
-  border-radius: 12px;
-  background: rgba(79,124,255,.07);
-  color: #aebbd4;
-  font-size: 11px;
-  line-height: 1.5;
-}
-.password-card strong { color: #e5ebf7; }
+.password-input button:hover { background: rgba(255,255,255,.07); color: #fff; }
 
 .modal-actions .primary {
   background: linear-gradient(180deg,#5f86ff,#3f6cf6);
@@ -165,7 +153,25 @@
 }
 .modal-actions .primary:hover { background: linear-gradient(180deg,#6b90ff,#4b77ff); }
 
+.confirm-modal { width: min(460px, calc(100vw - 40px)); }
+.danger {
+  border: 1px solid rgba(255,86,96,.45);
+  border-radius: 10px;
+  padding: 9px 13px;
+  background: linear-gradient(180deg,#ff6670,#e54752);
+  color: white;
+  font-weight: 650;
+  cursor: pointer;
+  box-shadow: 0 8px 22px rgba(229,71,82,.22);
+}
+.danger:hover { background: linear-gradient(180deg,#ff7580,#ef515d); }
+
 .check input { accent-color: var(--apple-blue); }
+
+.terminal-host {
+  background: #080a0d;
+  padding: 14px 16px;
+}
 
 @media (max-width: 900px) {
   .modal { width: min(620px, calc(100vw - 24px)); padding: 20px; }
