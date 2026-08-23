@@ -1,0 +1,147 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  --apple-bg: #07090c;
+  --apple-panel: rgba(18, 22, 28, .86);
+  --apple-panel-strong: rgba(22, 27, 34, .96);
+  --apple-border: rgba(255,255,255,.10);
+  --apple-border-strong: rgba(255,255,255,.16);
+  --apple-muted: #8b95a5;
+  --apple-text: #f5f7fa;
+  --apple-blue: #4f7cff;
+}
+
+.app-shell {
+  background:
+    radial-gradient(circle at 70% 0%, rgba(53,92,180,.10), transparent 35%),
+    linear-gradient(180deg, #0a0d11 0%, var(--apple-bg) 100%);
+}
+
+.sidebar,
+.tools-panel,
+.topbar {
+  background: rgba(13, 17, 22, .76);
+  backdrop-filter: blur(28px) saturate(130%);
+  -webkit-backdrop-filter: blur(28px) saturate(130%);
+}
+
+.sidebar { border-right-color: rgba(255,255,255,.07); }
+.tools-panel { border-left-color: rgba(255,255,255,.07); }
+.topbar { border-bottom-color: rgba(255,255,255,.07); }
+
+.brand-mark {
+  border-radius: 10px;
+  background: linear-gradient(180deg,#ffffff,#dce2ea);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.8), 0 6px 18px rgba(0,0,0,.25);
+}
+
+.primary,
+.secondary,
+.search,
+.server-row-wrap,
+.status-card,
+.tool-item,
+.tunnel-item,
+.modal label input:not([type=checkbox]),
+.modal label select {
+  border-radius: 11px;
+}
+
+.primary {
+  border-color: rgba(255,255,255,.14);
+  background: linear-gradient(180deg,#f8fafc,#e7ebf0);
+  color: #0b0e12;
+  box-shadow: 0 1px 0 rgba(255,255,255,.7) inset, 0 8px 18px rgba(0,0,0,.18);
+}
+
+.primary:hover { background: #fff; }
+.secondary { background: rgba(255,255,255,.045); border-color: rgba(255,255,255,.09); }
+.secondary:hover { background: rgba(255,255,255,.075); }
+
+.modal-backdrop {
+  background: rgba(0,0,0,.62);
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
+}
+
+.modal {
+  width: min(680px, calc(100vw - 40px));
+  padding: 26px;
+  border-radius: 20px;
+  border: 1px solid var(--apple-border-strong);
+  background: linear-gradient(180deg, rgba(24,29,36,.97), rgba(17,21,27,.97));
+  box-shadow: 0 30px 100px rgba(0,0,0,.56), inset 0 1px 0 rgba(255,255,255,.035);
+}
+
+.modal h2 { font-size: 23px; letter-spacing: -.025em; }
+.modal p { color: var(--apple-muted); }
+.modal label { color: #c9d0d8; font-size: 12px; }
+.modal label input:not([type=checkbox]), .modal label select {
+  min-height: 46px;
+  padding: 11px 13px;
+  background: rgba(8,11,15,.58);
+  border: 1px solid rgba(255,255,255,.12);
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+}
+.modal label input:focus, .modal label select:focus {
+  border-color: rgba(79,124,255,.9);
+  box-shadow: 0 0 0 3px rgba(79,124,255,.16);
+  background: rgba(8,11,15,.78);
+}
+
+.auth-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin: 10px 0 4px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+  background: rgba(7,10,14,.55);
+}
+.auth-switch button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #8f99a7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.auth-switch button.active {
+  background: rgba(255,255,255,.10);
+  color: #f5f7fa;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 5px 12px rgba(0,0,0,.18);
+}
+.auth-note {
+  margin: 7px 2px 12px !important;
+  color: #7f8998 !important;
+  font-size: 10.5px !important;
+}
+.password-card {
+  margin: 10px 0 12px;
+  padding: 12px 13px;
+  border: 1px solid rgba(79,124,255,.20);
+  border-radius: 12px;
+  background: rgba(79,124,255,.07);
+  color: #aebbd4;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.password-card strong { color: #e5ebf7; }
+
+.modal-actions .primary {
+  background: linear-gradient(180deg,#5f86ff,#3f6cf6);
+  color: #fff;
+  border-color: rgba(104,142,255,.7);
+  box-shadow: 0 8px 24px rgba(63,108,246,.26), inset 0 1px 0 rgba(255,255,255,.22);
+}
+.modal-actions .primary:hover { background: linear-gradient(180deg,#6b90ff,#4b77ff); }
+
+.check input { accent-color: var(--apple-blue); }
+
+@media (max-width: 900px) {
+  .modal { width: min(620px, calc(100vw - 24px)); padding: 20px; }
+}
