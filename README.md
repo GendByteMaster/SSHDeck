@@ -48,7 +48,7 @@ The desktop app currently provides:
 - automatic host discovery from `~/.ssh/config`;
 - searchable server sidebar;
 - one-click SSH connection;
-- multiple SSH terminal tabs;
+- multiple persistent SSH terminal tabs;
 - interactive PTY sessions suitable for shells and terminal applications;
 - terminal resize propagation;
 - session close handling;
