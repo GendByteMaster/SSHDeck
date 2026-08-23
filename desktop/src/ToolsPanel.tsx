@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Activity, Cable, History, Play, Plus, RefreshCw, RotateCw, Square, TerminalSquare, Trash2, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { classifyCommand, CommandRisk, riskLabel } from "./commandSafety";
 import { formatUptime, ServerStatus } from "./serverStatus";
 import { formatDuration, SessionHistoryItem, SessionView } from "./sessionLifecycle";
 import { loadTunnelAutoRestart, saveTunnelAutoRestart, TunnelProcessStatus, tunnelStateLabel } from "./tunnelHealth";
@@ -19,6 +20,7 @@ type Tunnel = {
   remotePort: number | null;
 };
 type WorkspaceData = { quickCommands: QuickCommand[]; tunnels: Tunnel[] };
+type PendingCommand = { item: QuickCommand; risk: CommandRisk };
 
 type Props = {
   servers: Server[];
@@ -48,6 +50,7 @@ export function ToolsPanel({ servers, activeSession, activeServerId, activeStatu
   const [autoRestart, setAutoRestart] = useState<Record<string, boolean>>(loadTunnelAutoRestart);
   const [quickOpen, setQuickOpen] = useState(false);
   const [tunnelOpen, setTunnelOpen] = useState(false);
+  const [pendingCommand, setPendingCommand] = useState<PendingCommand | null>(null);
   const restarting = useRef(new Set<string>());
   const restartAttempts = useRef(new Map<string, number>());
   const activeServer = servers.find((server) => server.id === activeServerId) ?? null;
@@ -116,11 +119,19 @@ export function ToolsPanel({ servers, activeSession, activeServerId, activeStatu
     [sessionHistory, activeServerId],
   );
 
-  async function runCommand(id: string) {
+  async function executeCommand(item: QuickCommand) {
     if (!activeSession || !sessionUsable) return onError("Open an active server session before running a Quick Command.");
     try {
-      await invoke("run_quick_command", { sessionId: activeSession.id, commandId: id });
+      await invoke("run_quick_command", { sessionId: activeSession.id, commandId: item.id });
+      setPendingCommand(null);
     } catch (value) { onError(String(value)); }
+  }
+
+  async function runCommand(item: QuickCommand) {
+    if (!activeSession || !sessionUsable) return onError("Open an active server session before running a Quick Command.");
+    const risk = classifyCommand(item.command);
+    if (risk.level === "low") return executeCommand(item);
+    setPendingCommand({ item, risk });
   }
 
   async function deleteCommand(id: string) {
@@ -203,12 +214,16 @@ export function ToolsPanel({ servers, activeSession, activeServerId, activeStatu
     <section className="tool-section">
       <div className="tool-heading"><div><TerminalSquare size={14} /><strong>Quick Commands</strong></div><button onClick={() => setQuickOpen(true)} title="Add command"><Plus size={14} /></button></div>
       <div className="tool-list">
-        {visibleCommands.map((item) => <div className="tool-item" key={item.id}>
-          <button className="tool-run" onClick={() => void runCommand(item.id)} disabled={!sessionUsable}><Play size={12} /><span><strong>{item.name}</strong><small>{item.command}</small></span></button>
-          <button className="tool-delete" onClick={() => void deleteCommand(item.id)}><Trash2 size={12} /></button>
-        </div>)}
+        {visibleCommands.map((item) => {
+          const risk = classifyCommand(item.command);
+          return <div className="tool-item" key={item.id}>
+            <button className="tool-run" onClick={() => void runCommand(item)} disabled={!sessionUsable}><Play size={12} /><span><strong>{item.name}</strong><small>{item.command}{risk.level !== "low" ? ` · ${riskLabel(risk.level)} risk` : ""}</small></span></button>
+            <button className="tool-delete" onClick={() => void deleteCommand(item.id)}><Trash2 size={12} /></button>
+          </div>;
+        })}
         {visibleCommands.length === 0 && <p className="tool-empty">No commands for this server.</p>}
       </div>
+      <p className="status-note">Potentially destructive Quick Commands are classified locally and require confirmation before they are sent to the SSH PTY.</p>
     </section>
 
     <section className="tool-section tunnels-section">
@@ -238,7 +253,23 @@ export function ToolsPanel({ servers, activeSession, activeServerId, activeStatu
 
     {quickOpen && <QuickCommandDialog servers={servers} activeServerId={activeServerId} onClose={() => setQuickOpen(false)} onSaved={(next) => { setData(next); setQuickOpen(false); }} onError={onError} />}
     {tunnelOpen && <TunnelDialog servers={servers} activeServerId={activeServerId} onClose={() => setTunnelOpen(false)} onSaved={(next) => { setData(next); setTunnelOpen(false); }} onError={onError} />}
+    {pendingCommand && <DangerousCommandDialog pending={pendingCommand} serverName={activeServer?.name ?? "server"} onClose={() => setPendingCommand(null)} onConfirm={() => void executeCommand(pendingCommand.item)} />}
   </aside>;
+}
+
+function DangerousCommandDialog({ pending, serverName, onClose, onConfirm }: { pending: PendingCommand; serverName: string; onClose: () => void; onConfirm: () => void }) {
+  const [confirmation, setConfirmation] = useState("");
+  const critical = pending.risk.level === "critical";
+  const allowed = !critical || confirmation.trim().toUpperCase() === "RUN";
+
+  return <div className="modal-backdrop"><div className="modal compact-modal">
+    <div className="modal-head"><div><h2>{riskLabel(pending.risk.level)} risk command</h2><p>SSHDeck stopped this Quick Command before sending it to <strong>{serverName}</strong>.</p></div><button type="button" className="icon-button" onClick={onClose}><X size={16} /></button></div>
+    <pre className="config-snippet">{pending.item.command}</pre>
+    {pending.risk.reasons.map((reason) => <p className="status-error" key={reason}>{reason}</p>)}
+    {critical && <label>Type RUN to confirm<input autoFocus value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="RUN" /></label>}
+    <p>Only continue if you have verified the target server and understand the command's effect.</p>
+    <div className="modal-actions"><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={!allowed} onClick={onConfirm}>Run anyway</button></div>
+  </div></div>;
 }
 
 function QuickCommandDialog({ servers, activeServerId, onClose, onSaved, onError }: { servers: Server[]; activeServerId: string | null; onClose: () => void; onSaved: (data: WorkspaceData) => void; onError: (error: string) => void }) {
