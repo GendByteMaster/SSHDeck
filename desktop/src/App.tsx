@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
-import { Clock3, Copy, Download, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, Search, Server, Star, Trash2, X } from "lucide-react";
+import { Clock3, Copy, Download, Eye, EyeOff, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, Search, Server, Star, Trash2, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ToolsPanel } from "./ToolsPanel";
 import { useServerStatus } from "./serverStatus";
@@ -45,6 +45,8 @@ export function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ServerDraft | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>("key");
+  const [draftPassword, setDraftPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [exportServer, setExportServer] = useState<ServerRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +55,9 @@ export function App() {
   const tabsRef = useRef<SessionView[]>([]);
   const serversRef = useRef<ServerRecord[]>([]);
   const reconnecting = useRef(new Set<string>());
+  const passwordsByServer = useRef(new Map<string, string>());
+  const serverBySession = useRef(new Map<string, string>());
+  const passwordSentForSession = useRef(new Set<string>());
   const { statuses, checking, refreshServer } = useServerStatus(servers);
 
   useEffect(() => { tabsRef.current = tabs; }, [tabs]);
@@ -75,8 +80,21 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const decoder = new TextDecoder();
     const unlisten = listen<TerminalOutput>("terminal-output", ({ payload }) => {
-      terminals.current.get(payload.sessionId)?.terminal.write(new Uint8Array(payload.data));
+      const bytes = new Uint8Array(payload.data);
+      terminals.current.get(payload.sessionId)?.terminal.write(bytes);
+
+      const serverId = serverBySession.current.get(payload.sessionId);
+      if (!serverId || passwordSentForSession.current.has(payload.sessionId)) return;
+      const password = passwordsByServer.current.get(serverId);
+      if (!password) return;
+
+      const text = decoder.decode(bytes).toLowerCase();
+      if (text.includes("password:")) {
+        passwordSentForSession.current.add(payload.sessionId);
+        void invoke("terminal_write", { sessionId: payload.sessionId, data: `${password}\n` });
+      }
     });
     return () => void unlisten.then((fn) => fn());
   }, []);
@@ -114,6 +132,8 @@ export function App() {
 
   async function startSession(server: ServerRecord, autoReconnect = true, reconnectAttempts = 0) {
     const id = await invoke<string>("terminal_start_server", { serverId: server.id });
+    serverBySession.current.set(id, server.id);
+    passwordSentForSession.current.delete(id);
     const status = await invoke<SessionProcessStatus>("terminal_session_status", { sessionId: id });
     return {
       id,
@@ -135,6 +155,8 @@ export function App() {
     try {
       terminals.current.get(tab.id)?.terminal.dispose();
       terminals.current.delete(tab.id);
+      serverBySession.current.delete(tab.id);
+      passwordSentForSession.current.delete(tab.id);
       await invoke("terminal_close", { sessionId: tab.id }).catch(() => undefined);
 
       let attempt = tab.reconnectAttempts;
@@ -251,6 +273,8 @@ export function App() {
       await invoke("terminal_close", { sessionId: tab.id });
       terminals.current.get(tab.id)?.terminal.dispose();
       terminals.current.delete(tab.id);
+      serverBySession.current.delete(tab.id);
+      passwordSentForSession.current.delete(tab.id);
       const replacement = await startSession(server, tab.autoReconnect, 0);
       setTabs((value) => value.map((item) => item.id === tab.id ? replacement : item));
       setActiveId(replacement.id);
@@ -264,6 +288,8 @@ export function App() {
     await invoke("terminal_close", { sessionId: id });
     terminals.current.get(id)?.terminal.dispose();
     terminals.current.delete(id);
+    serverBySession.current.delete(id);
+    passwordSentForSession.current.delete(id);
     if (tab) appendHistory({
       serverId: tab.serverId,
       serverName: tab.name,
@@ -292,7 +318,11 @@ export function App() {
         identityFile: authMode === "password" ? null : draft.identityFile,
         lastConnectedAt: draft.lastConnectedAt ?? null,
       };
-      await invoke("save_server", { server });
+      const saved = await invoke<ServerRecord>("save_server", { server });
+      if (authMode === "password" && draftPassword) passwordsByServer.current.set(saved.id, draftPassword);
+      if (authMode === "key") passwordsByServer.current.delete(saved.id);
+      setDraftPassword("");
+      setShowPassword(false);
       setDraft(null);
       await refreshServers();
     } catch (value) { setError(String(value)); }
@@ -301,6 +331,7 @@ export function App() {
   async function remove(server: ServerRecord) {
     if (!window.confirm(`Delete ${server.name} from SSHDeck?`)) return;
     await invoke("delete_server", { id: server.id });
+    passwordsByServer.current.delete(server.id);
     await refreshServers();
   }
 
@@ -337,11 +368,15 @@ export function App() {
 
   function openNewServer() {
     setAuthMode("key");
+    setDraftPassword("");
+    setShowPassword(false);
     setDraft({ ...emptyDraft });
   }
 
   function openEditServer(server: ServerRecord) {
     setAuthMode(server.identityFile ? "key" : "password");
+    setDraftPassword("");
+    setShowPassword(false);
     setDraft({ ...server });
   }
 
@@ -414,7 +449,10 @@ export function App() {
       {authMode === "key" ? <>
         <label>Identity file<input value={draft.identityFile ?? ""} onChange={(e) => setDraft({ ...draft, identityFile: e.target.value || null })} placeholder="~/.ssh/id_ed25519" /></label>
         <p className="auth-note">The key stays managed by OpenSSH, ssh-agent, or your hardware-backed agent.</p>
-      </> : <div className="password-card"><strong>Password authentication enabled.</strong><br />SSHDeck does not store passwords in <code>servers.json</code>. When you connect, OpenSSH will request the password securely inside the terminal session.</div>}
+      </> : <>
+        <label>Password<div className="password-input"><input type={showPassword ? "text" : "password"} value={draftPassword} onChange={(e) => setDraftPassword(e.target.value)} placeholder="Enter password for this app session" autoComplete="off" /><button type="button" onClick={() => setShowPassword((value) => !value)} title={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={15} /> : <Eye size={15} />}</button></div></label>
+        <div className="password-card"><strong>Session-only secret.</strong><br />The password is kept only in SSHDeck memory and is automatically sent when OpenSSH shows a password prompt. It is never written to <code>servers.json</code> and is forgotten when the app closes. Leave it empty to type the password manually in the terminal.</div>
+      </>}
 
       <label>Group<input value={draft.group ?? ""} onChange={(e) => setDraft({ ...draft, group: e.target.value || null })} placeholder="Production" /></label>
       <label className="check"><input type="checkbox" checked={draft.favorite} onChange={(e) => setDraft({ ...draft, favorite: e.target.checked })} /> Favorite</label>
