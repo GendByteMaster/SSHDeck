@@ -73,8 +73,7 @@ impl WorkspaceStore {
         }
         let payload = serde_json::to_string_pretty(data)?;
         let tmp = self.path.with_extension("json.tmp");
-        fs::write(&tmp, payload)
-            .with_context(|| format!("failed to write {}", tmp.display()))?;
+        fs::write(&tmp, payload).with_context(|| format!("failed to write {}", tmp.display()))?;
         if self.path.exists() {
             fs::remove_file(&self.path)
                 .with_context(|| format!("failed to replace {}", self.path.display()))?;
