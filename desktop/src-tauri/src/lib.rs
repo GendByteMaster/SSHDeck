@@ -18,6 +18,11 @@ struct Session {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
     child: Box<dyn Child + Send + Sync>,
+    server_id: String,
+    started_at_ms: u64,
+    ended_at_ms: Option<u64>,
+    exit_code: Option<u32>,
+    signal: Option<String>,
 }
 
 #[derive(Default)]
@@ -31,6 +36,26 @@ struct Tunnels(Mutex<HashMap<String, ProcessChild>>);
 struct TerminalOutput {
     session_id: String,
     data: Vec<u8>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TerminalSessionStatus {
+    session_id: String,
+    server_id: String,
+    state: String,
+    started_at_ms: u64,
+    ended_at_ms: Option<u64>,
+    duration_ms: u64,
+    exit_code: Option<u32>,
+    signal: Option<String>,
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_millis() as u64)
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -231,6 +256,11 @@ fn terminal_start_server(
                 master: pair.master,
                 writer,
                 child,
+                server_id: server_id.clone(),
+                started_at_ms: now_ms(),
+                ended_at_ms: None,
+                exit_code: None,
+                signal: None,
             },
         );
 
@@ -240,6 +270,51 @@ fn terminal_start_server(
         .unwrap_or_default();
     let _ = ServerRegistry::load_default().and_then(|registry| registry.touch_recent(&server_id, now));
     Ok(session_id)
+}
+
+#[tauri::command]
+fn terminal_session_status(
+    session_id: String,
+    sessions: State<'_, Sessions>,
+) -> Result<TerminalSessionStatus, String> {
+    let mut sessions = sessions
+        .0
+        .lock()
+        .map_err(|_| "session lock poisoned".to_owned())?;
+    let session = sessions
+        .get_mut(&session_id)
+        .ok_or_else(|| "unknown terminal session".to_owned())?;
+
+    if session.ended_at_ms.is_none() {
+        match session.child.try_wait() {
+            Ok(Some(exit)) => {
+                session.ended_at_ms = Some(now_ms());
+                session.exit_code = Some(exit.exit_code());
+                session.signal = exit.signal().map(str::to_owned);
+            }
+            Ok(None) => {}
+            Err(error) => return Err(format!("failed to read terminal process state: {error}")),
+        }
+    }
+
+    let current = now_ms();
+    let end = session.ended_at_ms.unwrap_or(current);
+    let state = match session.ended_at_ms {
+        None => "running",
+        Some(_) if session.exit_code == Some(0) && session.signal.is_none() => "disconnected",
+        Some(_) => "failed",
+    };
+
+    Ok(TerminalSessionStatus {
+        session_id,
+        server_id: session.server_id.clone(),
+        state: state.to_owned(),
+        started_at_ms: session.started_at_ms,
+        ended_at_ms: session.ended_at_ms,
+        duration_ms: end.saturating_sub(session.started_at_ms),
+        exit_code: session.exit_code,
+        signal: session.signal.clone(),
+    })
 }
 
 #[tauri::command]
@@ -496,6 +571,7 @@ pub fn run() {
             delete_server,
             import_ssh_host,
             terminal_start_server,
+            terminal_session_status,
             terminal_write,
             terminal_resize,
             terminal_close,
