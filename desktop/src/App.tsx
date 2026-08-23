@@ -6,6 +6,13 @@ import { Clock3, Copy, Download, Pencil, Plus, RefreshCw, Search, Server, Star, 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ToolsPanel } from "./ToolsPanel";
 import { useServerStatus } from "./serverStatus";
+import {
+  loadSessionHistory,
+  saveSessionHistory,
+  SessionHistoryItem,
+  SessionProcessStatus,
+  SessionView,
+} from "./sessionLifecycle";
 
 type TerminalOutput = { sessionId: string; data: number[] };
 type ServerRecord = {
@@ -20,7 +27,6 @@ type ServerRecord = {
   sourceAlias: string | null;
   lastConnectedAt: number | null;
 };
-type SessionTab = { id: string; serverId: string; name: string };
 type TerminalEntry = { terminal: Terminal; fit: FitAddon; element: HTMLDivElement };
 type ServerDraft = Omit<ServerRecord, "lastConnectedAt"> & { lastConnectedAt?: number | null };
 
@@ -33,7 +39,8 @@ export function App() {
   const [servers, setServers] = useState<ServerRecord[]>([]);
   const [sshHosts, setSshHosts] = useState<string[]>([]);
   const [query, setQuery] = useState("");
-  const [tabs, setTabs] = useState<SessionTab[]>([]);
+  const [tabs, setTabs] = useState<SessionView[]>([]);
+  const [history, setHistory] = useState<SessionHistoryItem[]>(loadSessionHistory);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ServerDraft | null>(null);
   const [importOpen, setImportOpen] = useState(false);
@@ -41,7 +48,21 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const terminals = useRef(new Map<string, TerminalEntry>());
   const terminalHost = useRef<HTMLDivElement | null>(null);
+  const tabsRef = useRef<SessionView[]>([]);
+  const serversRef = useRef<ServerRecord[]>([]);
+  const reconnecting = useRef(new Set<string>());
   const { statuses, checking, refreshServer } = useServerStatus(servers);
+
+  useEffect(() => { tabsRef.current = tabs; }, [tabs]);
+  useEffect(() => { serversRef.current = servers; }, [servers]);
+
+  function appendHistory(item: Omit<SessionHistoryItem, "id">) {
+    setHistory((current) => {
+      const next = [{ ...item, id: `${item.atMs}-${Math.random().toString(36).slice(2, 8)}` }, ...current].slice(0, 30);
+      saveSessionHistory(next);
+      return next;
+    });
+  }
 
   async function refreshServers() {
     setServers(await invoke<ServerRecord[]>("list_servers"));
@@ -89,6 +110,107 @@ export function App() {
     return () => window.removeEventListener("resize", resize);
   }, [activeId]);
 
+  async function startSession(server: ServerRecord, autoReconnect = true, reconnectAttempts = 0) {
+    const id = await invoke<string>("terminal_start_server", { serverId: server.id });
+    const status = await invoke<SessionProcessStatus>("terminal_session_status", { sessionId: id });
+    return {
+      id,
+      serverId: server.id,
+      name: server.name,
+      state: status.state === "running" ? "active" : status.state,
+      startedAtMs: status.startedAtMs,
+      durationMs: status.durationMs,
+      exitCode: status.exitCode,
+      signal: status.signal,
+      autoReconnect,
+      reconnectAttempts,
+    } satisfies SessionView;
+  }
+
+  async function autoReconnect(tab: SessionView) {
+    if (reconnecting.current.has(tab.id)) return;
+    reconnecting.current.add(tab.id);
+    try {
+      terminals.current.get(tab.id)?.terminal.dispose();
+      terminals.current.delete(tab.id);
+      await invoke("terminal_close", { sessionId: tab.id }).catch(() => undefined);
+
+      let attempt = tab.reconnectAttempts;
+      while (attempt < 3) {
+        attempt += 1;
+        if (!tabsRef.current.some((item) => item.id === tab.id)) return;
+        setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, state: "reconnecting", reconnectAttempts: attempt } : item));
+        await new Promise((resolve) => window.setTimeout(resolve, 1000 * (2 ** (attempt - 1))));
+
+        const server = serversRef.current.find((item) => item.id === tab.serverId);
+        if (!server || !tabsRef.current.some((item) => item.id === tab.id)) return;
+        try {
+          const replacement = await startSession(server, tab.autoReconnect, attempt);
+          setTabs((current) => current.map((item) => item.id === tab.id ? replacement : item));
+          setActiveId((current) => current === tab.id ? replacement.id : current);
+          appendHistory({
+            serverId: server.id,
+            serverName: server.name,
+            state: "reconnected",
+            atMs: Date.now(),
+            durationMs: 0,
+            exitCode: null,
+          });
+          void refreshServer(server.id).catch(() => undefined);
+          return;
+        } catch (value) {
+          if (attempt >= 3) {
+            setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, state: "failed", reconnectAttempts: attempt } : item));
+            setError(`Auto-reconnect failed after ${attempt} attempts: ${String(value)}`);
+          }
+        }
+      }
+    } finally {
+      reconnecting.current.delete(tab.id);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    async function pollSessions() {
+      const running = tabsRef.current.filter((tab) => tab.state === "active");
+      await Promise.all(running.map(async (tab) => {
+        try {
+          const status = await invoke<SessionProcessStatus>("terminal_session_status", { sessionId: tab.id });
+          if (cancelled) return;
+          if (status.state === "running") {
+            setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, durationMs: status.durationMs } : item));
+            return;
+          }
+
+          setTabs((current) => current.map((item) => item.id === tab.id ? {
+            ...item,
+            state: status.state,
+            durationMs: status.durationMs,
+            exitCode: status.exitCode,
+            signal: status.signal,
+          } : item));
+          appendHistory({
+            serverId: tab.serverId,
+            serverName: tab.name,
+            state: status.state,
+            atMs: status.endedAtMs ?? Date.now(),
+            durationMs: status.durationMs,
+            exitCode: status.exitCode,
+          });
+          if (status.state === "failed" && tab.autoReconnect && tab.reconnectAttempts < 3) {
+            void autoReconnect({ ...tab, state: "failed", durationMs: status.durationMs, exitCode: status.exitCode, signal: status.signal });
+          }
+        } catch (value) {
+          if (!cancelled) setError(`Could not read session state: ${String(value)}`);
+        }
+      }));
+    }
+    void pollSessions();
+    const timer = window.setInterval(() => void pollSessions(), 1000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
+
   const filtered = useMemo(() => {
     const needle = query.toLowerCase();
     return servers.filter((server) => [server.name, server.host, server.group ?? ""].some((value) => value.toLowerCase().includes(needle)));
@@ -107,11 +229,6 @@ export function App() {
   const activeTab = tabs.find((tab) => tab.id === activeId) ?? null;
   const activeStatus = activeTab ? statuses[activeTab.serverId] ?? null : null;
 
-  async function startSession(server: ServerRecord) {
-    const id = await invoke<string>("terminal_start_server", { serverId: server.id });
-    return { id, serverId: server.id, name: server.name } satisfies SessionTab;
-  }
-
   async function connect(server: ServerRecord) {
     const existing = tabs.find((tab) => tab.serverId === server.id);
     if (existing) { setActiveId(existing.id); return; }
@@ -124,14 +241,14 @@ export function App() {
     } catch (value) { setError(String(value)); }
   }
 
-  async function reconnect(tab: SessionTab) {
+  async function reconnect(tab: SessionView) {
     const server = servers.find((item) => item.id === tab.serverId);
     if (!server) return;
     try {
       await invoke("terminal_close", { sessionId: tab.id });
       terminals.current.get(tab.id)?.terminal.dispose();
       terminals.current.delete(tab.id);
-      const replacement = await startSession(server);
+      const replacement = await startSession(server, tab.autoReconnect, 0);
       setTabs((value) => value.map((item) => item.id === tab.id ? replacement : item));
       setActiveId(replacement.id);
       void refreshServers();
@@ -140,14 +257,27 @@ export function App() {
   }
 
   async function closeTab(id: string) {
+    const tab = tabs.find((item) => item.id === id);
     await invoke("terminal_close", { sessionId: id });
     terminals.current.get(id)?.terminal.dispose();
     terminals.current.delete(id);
+    if (tab) appendHistory({
+      serverId: tab.serverId,
+      serverName: tab.name,
+      state: "closed",
+      atMs: Date.now(),
+      durationMs: tab.durationMs,
+      exitCode: tab.exitCode,
+    });
     setTabs((value) => {
       const next = value.filter((tab) => tab.id !== id);
       if (activeId === id) setActiveId(next.at(-1)?.id ?? null);
       return next;
     });
+  }
+
+  function toggleAutoReconnect(id: string) {
+    setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, autoReconnect: !tab.autoReconnect } : tab));
   }
 
   async function save(event: FormEvent) {
@@ -231,19 +361,25 @@ export function App() {
     </aside>
 
     <section className="workspace">
-      <header className="topbar"><div className="tabs">{tabs.map((tab) => {
-        const status = statuses[tab.serverId];
-        const state = checking.has(tab.serverId) ? "checking" : status?.state ?? "unknown";
-        return <button key={tab.id} className={`tab ${activeId === tab.id ? "active" : ""}`} onClick={() => setActiveId(tab.id)}>
-          <span className={`session-dot ${state}`} /><span>{tab.name}</span>
-          <RefreshCw size={12} onClick={(event) => { event.stopPropagation(); void reconnect(tab); }} />
-          <X size={13} onClick={(event) => { event.stopPropagation(); void closeTab(tab.id); }} />
-        </button>;
-      })}</div></header>
+      <header className="topbar"><div className="tabs">{tabs.map((tab) => <button key={tab.id} className={`tab ${activeId === tab.id ? "active" : ""}`} onClick={() => setActiveId(tab.id)}>
+        <span className={`session-dot ${tab.state}`} /><span>{tab.name}</span>
+        <RefreshCw size={12} className={tab.state === "reconnecting" ? "spin" : ""} onClick={(event) => { event.stopPropagation(); void reconnect(tab); }} />
+        <X size={13} onClick={(event) => { event.stopPropagation(); void closeTab(tab.id); }} />
+      </button>)}</div></header>
       {activeId ? <div ref={terminalHost} className="terminal-host" /> : <div className="welcome"><div className="welcome-icon"><Server size={30} /></div><h1>Your servers, one click away</h1><p>Add a server to SSHDeck or import an existing OpenSSH host. Private keys stay managed by OpenSSH.</p></div>}
     </section>
 
-    <ToolsPanel servers={servers} activeSessionId={activeId} activeServerId={activeTab?.serverId ?? null} activeStatus={activeStatus} statusChecking={activeTab ? checking.has(activeTab.serverId) : false} onRefreshStatus={async () => { if (activeTab) await refreshServer(activeTab.serverId); }} onError={setError} />
+    <ToolsPanel
+      servers={servers}
+      activeSession={activeTab}
+      activeServerId={activeTab?.serverId ?? null}
+      activeStatus={activeStatus}
+      statusChecking={activeTab ? checking.has(activeTab.serverId) : false}
+      sessionHistory={history}
+      onToggleAutoReconnect={() => { if (activeTab) toggleAutoReconnect(activeTab.id); }}
+      onRefreshStatus={async () => { if (activeTab) await refreshServer(activeTab.serverId); }}
+      onError={setError}
+    />
 
     {draft && <div className="modal-backdrop"><form className="modal" onSubmit={(event) => void save(event)}>
       <div className="modal-head"><div><h2>{draft.id ? "Edit server" : "Add server"}</h2><p>Stored locally by SSHDeck. Private key contents are never copied.</p></div><button type="button" className="icon-button" onClick={() => setDraft(null)}><X size={16} /></button></div>
