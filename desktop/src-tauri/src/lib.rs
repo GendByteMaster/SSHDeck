@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::Mutex;
 
-use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
+use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::Serialize;
 use sshdeck::config::SshConfig;
 use tauri::{AppHandle, Emitter, State};
@@ -11,6 +11,7 @@ use uuid::Uuid;
 struct Session {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
+    child: Box<dyn Child + Send + Sync>,
 }
 
 #[derive(Default)]
@@ -40,7 +41,7 @@ fn terminal_start(host: String, app: AppHandle, sessions: State<'_, Sessions>) -
 
     let mut command = CommandBuilder::new("ssh");
     command.arg(&host);
-    let _child = pair.slave.spawn_command(command).map_err(|error| error.to_string())?;
+    let child = pair.slave.spawn_command(command).map_err(|error| error.to_string())?;
     drop(pair.slave);
 
     let writer = pair.master.take_writer().map_err(|error| error.to_string())?;
@@ -64,7 +65,7 @@ fn terminal_start(host: String, app: AppHandle, sessions: State<'_, Sessions>) -
     });
 
     sessions.0.lock().map_err(|_| "session lock poisoned".to_owned())?
-        .insert(session_id.clone(), Session { master: pair.master, writer });
+        .insert(session_id.clone(), Session { master: pair.master, writer, child });
 
     Ok(session_id)
 }
@@ -86,7 +87,10 @@ fn terminal_resize(session_id: String, rows: u16, cols: u16, sessions: State<'_,
 
 #[tauri::command]
 fn terminal_close(session_id: String, sessions: State<'_, Sessions>) -> Result<(), String> {
-    sessions.0.lock().map_err(|_| "session lock poisoned".to_owned())?.remove(&session_id);
+    let mut sessions = sessions.0.lock().map_err(|_| "session lock poisoned".to_owned())?;
+    if let Some(mut session) = sessions.remove(&session_id) {
+        let _ = session.child.kill();
+    }
     Ok(())
 }
 
