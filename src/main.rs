@@ -1,12 +1,7 @@
-mod config;
-mod server;
-mod ssh;
-
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-
-use crate::config::SshConfig;
-use crate::ssh::SshClient;
+use sshdeck::config::SshConfig;
+use sshdeck::ssh::SshClient;
 
 #[derive(Debug, Parser)]
 #[command(name = "sshdeck", version, about = "A fast SSH workspace for developers")]
@@ -37,7 +32,7 @@ fn main() -> Result<()> {
     match cli.command {
         Command::List => {
             let hosts = config.hosts();
-            if hosts.is_empty() {
+            if hosts.clone().next().is_none() {
                 println!("No SSH hosts found in ~/.ssh/config");
             } else {
                 for host in hosts {
