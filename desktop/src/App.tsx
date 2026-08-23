@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
-import { Clock3, Copy, Download, Pencil, Plus, RefreshCw, Search, Server, Star, Trash2, X } from "lucide-react";
+import { Clock3, Copy, Download, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, Search, Server, Star, Trash2, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ToolsPanel } from "./ToolsPanel";
 import { useServerStatus } from "./serverStatus";
@@ -29,6 +29,7 @@ type ServerRecord = {
 };
 type TerminalEntry = { terminal: Terminal; fit: FitAddon; element: HTMLDivElement };
 type ServerDraft = Omit<ServerRecord, "lastConnectedAt"> & { lastConnectedAt?: number | null };
+type AuthMode = "key" | "password";
 
 const emptyDraft: ServerDraft = {
   id: "", name: "", host: "", user: null, port: 22, identityFile: null,
@@ -43,6 +44,7 @@ export function App() {
   const [history, setHistory] = useState<SessionHistoryItem[]>(loadSessionHistory);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ServerDraft | null>(null);
+  const [authMode, setAuthMode] = useState<AuthMode>("key");
   const [importOpen, setImportOpen] = useState(false);
   const [exportServer, setExportServer] = useState<ServerRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -285,7 +287,12 @@ export function App() {
     event.preventDefault();
     if (!draft) return;
     try {
-      await invoke("save_server", { server: { ...draft, lastConnectedAt: draft.lastConnectedAt ?? null } });
+      const server = {
+        ...draft,
+        identityFile: authMode === "password" ? null : draft.identityFile,
+        lastConnectedAt: draft.lastConnectedAt ?? null,
+      };
+      await invoke("save_server", { server });
       setDraft(null);
       await refreshServers();
     } catch (value) { setError(String(value)); }
@@ -328,6 +335,16 @@ export function App() {
     } catch (value) { setError(`Could not copy to clipboard: ${String(value)}`); }
   }
 
+  function openNewServer() {
+    setAuthMode("key");
+    setDraft({ ...emptyDraft });
+  }
+
+  function openEditServer(server: ServerRecord) {
+    setAuthMode(server.identityFile ? "key" : "password");
+    setDraft({ ...server });
+  }
+
   function ServerRow({ server }: { server: ServerRecord }) {
     const status = statuses[server.id];
     const state = checking.has(server.id) ? "checking" : status?.state ?? "unknown";
@@ -339,7 +356,7 @@ export function App() {
       <div className="row-actions">
         <button title="Favorite" onClick={() => void toggleFavorite(server)}><Star size={13} fill={server.favorite ? "currentColor" : "none"} /></button>
         <button title="Export OpenSSH snippet" onClick={() => setExportServer(server)}><Copy size={13} /></button>
-        <button title="Edit" onClick={() => setDraft({ ...server })}><Pencil size={13} /></button>
+        <button title="Edit" onClick={() => openEditServer(server)}><Pencil size={13} /></button>
         <button title="Delete" onClick={() => void remove(server)}><Trash2 size={13} /></button>
       </div>
     </div>;
@@ -347,9 +364,9 @@ export function App() {
 
   return <main className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><div className="brand-mark">S</div><div><strong>SSHDeck</strong><span>Remote workspace</span></div></div>
+      <div className="brand"><div className="brand-mark">S</div><div><strong>SSHDeck</strong><span>Secure connections</span></div></div>
       <div className="sidebar-actions">
-        <button className="primary" onClick={() => setDraft({ ...emptyDraft })}><Plus size={15} /> Add server</button>
+        <button className="primary" onClick={openNewServer}><Plus size={15} /> Add server</button>
         <button className="secondary" onClick={() => setImportOpen(true)}><Download size={15} /> Import SSH</button>
       </div>
       <div className="search"><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search servers" /></div>
@@ -367,7 +384,7 @@ export function App() {
         <RefreshCw size={12} className={tab.state === "reconnecting" ? "spin" : ""} onClick={(event) => { event.stopPropagation(); void reconnect(tab); }} />
         <X size={13} onClick={(event) => { event.stopPropagation(); void closeTab(tab.id); }} />
       </button>)}</div></header>
-      {activeId ? <div ref={terminalHost} className="terminal-host" /> : <div className="welcome"><div className="welcome-icon"><Server size={30} /></div><h1>Your servers, one click away</h1><p>Add a server to SSHDeck or import an existing OpenSSH host. Private keys stay managed by OpenSSH.</p></div>}
+      {activeId ? <div ref={terminalHost} className="terminal-host" /> : <div className="welcome"><div className="welcome-icon"><Server size={30} /></div><h1>Your servers, one click away</h1><p>Add a server to SSHDeck or import an existing OpenSSH host. Authentication remains handled by OpenSSH.</p></div>}
     </section>
 
     <ToolsPanel
@@ -382,12 +399,23 @@ export function App() {
       onError={setError}
     />
 
-    {draft && <div className="modal-backdrop"><form className="modal" onSubmit={(event) => void save(event)}>
-      <div className="modal-head"><div><h2>{draft.id ? "Edit server" : "Add server"}</h2><p>Stored locally by SSHDeck. Private key contents are never copied.</p></div><button type="button" className="icon-button" onClick={() => setDraft(null)}><X size={16} /></button></div>
-      <label>Name<input required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Production API" /></label>
+    {draft && <div className="modal-backdrop"><form className="modal server-editor" onSubmit={(event) => void save(event)}>
+      <div className="modal-head"><div><h2>{draft.id ? "Edit Server" : "Add Server"}</h2><p>Connection metadata is stored locally. SSHDeck never copies private key contents.</p></div><button type="button" className="icon-button" onClick={() => setDraft(null)}><X size={18} /></button></div>
+      <label>Name<input autoFocus required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Production API" /></label>
       <label>Host<input required value={draft.host} onChange={(e) => setDraft({ ...draft, host: e.target.value })} placeholder="203.0.113.10" /></label>
       <div className="form-grid"><label>User<input value={draft.user ?? ""} onChange={(e) => setDraft({ ...draft, user: e.target.value || null })} placeholder="deploy" /></label><label>Port<input type="number" min="1" max="65535" value={draft.port} onChange={(e) => setDraft({ ...draft, port: Number(e.target.value) })} /></label></div>
-      <label>Identity file<input value={draft.identityFile ?? ""} onChange={(e) => setDraft({ ...draft, identityFile: e.target.value || null })} placeholder="~/.ssh/id_ed25519" /></label>
+
+      <label>Authentication</label>
+      <div className="auth-switch" role="group" aria-label="Authentication method">
+        <button type="button" className={authMode === "key" ? "active" : ""} onClick={() => setAuthMode("key")}><KeyRound size={15} /> SSH Key</button>
+        <button type="button" className={authMode === "password" ? "active" : ""} onClick={() => setAuthMode("password")}><LockKeyhole size={15} /> Password</button>
+      </div>
+
+      {authMode === "key" ? <>
+        <label>Identity file<input value={draft.identityFile ?? ""} onChange={(e) => setDraft({ ...draft, identityFile: e.target.value || null })} placeholder="~/.ssh/id_ed25519" /></label>
+        <p className="auth-note">The key stays managed by OpenSSH, ssh-agent, or your hardware-backed agent.</p>
+      </> : <div className="password-card"><strong>Password authentication enabled.</strong><br />SSHDeck does not store passwords in <code>servers.json</code>. When you connect, OpenSSH will request the password securely inside the terminal session.</div>}
+
       <label>Group<input value={draft.group ?? ""} onChange={(e) => setDraft({ ...draft, group: e.target.value || null })} placeholder="Production" /></label>
       <label className="check"><input type="checkbox" checked={draft.favorite} onChange={(e) => setDraft({ ...draft, favorite: e.target.checked })} /> Favorite</label>
       {draft.sourceAlias && <p>Imported from OpenSSH alias <code>{draft.sourceAlias}</code>. Connections keep using that alias so ProxyJump/Match rules remain effective.</p>}
