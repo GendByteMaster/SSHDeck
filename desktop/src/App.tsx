@@ -386,9 +386,39 @@ export function App() {
 
   async function confirmDelete() {
     if (!deleteServer) return;
+    const serverId = deleteServer.id;
+    const doomedTabs = tabsRef.current.filter((tab) => tab.serverId === serverId);
+    const doomedIds = new Set(doomedTabs.map((tab) => tab.id));
+
     try {
-      await invoke("delete_server", { id: deleteServer.id });
-      sessionPasswords.current.delete(deleteServer.id);
+      await Promise.all(doomedTabs.map(async (tab) => {
+        await invoke("terminal_close", { sessionId: tab.id }).catch(() => undefined);
+        terminals.current.get(tab.id)?.terminal.dispose();
+        terminals.current.delete(tab.id);
+        pendingOutput.current.delete(tab.id);
+        recentOutputText.current.delete(tab.id);
+        sessionServer.current.delete(tab.id);
+        passwordSent.current.delete(tab.id);
+        reconnecting.current.delete(tab.id);
+      }));
+
+      const remainingTabs = tabsRef.current.filter((tab) => tab.serverId !== serverId);
+      tabsRef.current = remainingTabs;
+      setTabs(remainingTabs);
+      setActiveId((current) => {
+        if (!current || !doomedIds.has(current)) return current;
+        terminalHost.current?.replaceChildren();
+        return remainingTabs.at(-1)?.id ?? null;
+      });
+
+      setHistory((current) => {
+        const next = current.filter((item) => item.serverId !== serverId);
+        saveSessionHistory(next);
+        return next;
+      });
+      sessionPasswords.current.delete(serverId);
+
+      await invoke("delete_server", { id: serverId });
       setDeleteServer(null);
       await refreshServers();
     } catch (value) { setError(String(value)); }
