@@ -23,14 +23,17 @@ const STALE_MS = 60_000;
 export function useServerStatus(servers: ServerRef[]) {
   const [statuses, setStatuses] = useState<Record<string, ServerStatus>>({});
   const [checking, setChecking] = useState<Set<string>>(new Set());
+  const statusesRef = useRef<Record<string, ServerStatus>>({});
   const running = useRef(false);
   const focused = useRef(true);
   const serverIds = useMemo(() => servers.map((server) => server.id), [servers]);
   const serverKey = serverIds.join("\u0000");
 
+  useEffect(() => { statusesRef.current = statuses; }, [statuses]);
+
   const probeOne = useCallback(async (serverId: string, force = true) => {
     if (!force) {
-      const cached = statuses[serverId];
+      const cached = statusesRef.current[serverId];
       if (cached && Date.now() - cached.checkedAt * 1000 < STALE_MS) return cached;
     }
 
@@ -42,7 +45,21 @@ export function useServerStatus(servers: ServerRef[]) {
     });
     try {
       const result = await invoke<ServerStatus>("server_status", { serverId });
-      setStatuses((current) => current[serverId] === result ? current : { ...current, [serverId]: result });
+      setStatuses((current) => {
+        const previous = current[serverId];
+        if (previous
+          && previous.state === result.state
+          && previous.latencyMs === result.latencyMs
+          && previous.sshOk === result.sshOk
+          && previous.uptimeSeconds === result.uptimeSeconds
+          && previous.error === result.error) {
+          statusesRef.current = current;
+          return current;
+        }
+        const next = { ...current, [serverId]: result };
+        statusesRef.current = next;
+        return next;
+      });
       return result;
     } finally {
       setChecking((current) => {
@@ -52,7 +69,7 @@ export function useServerStatus(servers: ServerRef[]) {
         return next;
       });
     }
-  }, [statuses]);
+  }, []);
 
   const refreshAll = useCallback(async (force = false) => {
     if (running.current || serverIds.length === 0 || !focused.current) return;
