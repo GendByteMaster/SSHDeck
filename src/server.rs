@@ -5,6 +5,8 @@ pub struct Server {
 
 impl Server {
     pub fn new(alias: impl Into<String>) -> Self {
-        Self { alias: alias.into() }
+        Self {
+            alias: alias.into(),
+        }
     }
 }
