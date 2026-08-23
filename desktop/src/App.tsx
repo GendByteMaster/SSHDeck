@@ -5,6 +5,7 @@ import { Terminal } from "@xterm/xterm";
 import { Clock3, Copy, Download, Pencil, Plus, RefreshCw, Search, Server, Star, Trash2, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ToolsPanel } from "./ToolsPanel";
+import { useServerStatus } from "./serverStatus";
 
 type TerminalOutput = { sessionId: string; data: number[] };
 type ServerRecord = {
@@ -40,6 +41,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const terminals = useRef(new Map<string, TerminalEntry>());
   const terminalHost = useRef<HTMLDivElement | null>(null);
+  const { statuses, checking, refreshServer } = useServerStatus(servers);
 
   async function refreshServers() {
     setServers(await invoke<ServerRecord[]>("list_servers"));
@@ -103,6 +105,7 @@ export function App() {
     return [...map.entries()];
   }, [filtered]);
   const activeTab = tabs.find((tab) => tab.id === activeId) ?? null;
+  const activeStatus = activeTab ? statuses[activeTab.serverId] ?? null : null;
 
   async function startSession(server: ServerRecord) {
     const id = await invoke<string>("terminal_start_server", { serverId: server.id });
@@ -117,6 +120,7 @@ export function App() {
       setTabs((value) => [...value, tab]);
       setActiveId(tab.id);
       void refreshServers();
+      void refreshServer(server.id).catch(() => undefined);
     } catch (value) { setError(String(value)); }
   }
 
@@ -131,6 +135,7 @@ export function App() {
       setTabs((value) => value.map((item) => item.id === tab.id ? replacement : item));
       setActiveId(replacement.id);
       void refreshServers();
+      void refreshServer(server.id).catch(() => undefined);
     } catch (value) { setError(String(value)); }
   }
 
@@ -193,10 +198,12 @@ export function App() {
   }
 
   function ServerRow({ server }: { server: ServerRecord }) {
+    const status = statuses[server.id];
+    const state = checking.has(server.id) ? "checking" : status?.state ?? "unknown";
     return <div className="server-row-wrap">
       <button className="server-row" onClick={() => void connect(server)}>
-        <span className="status-dot" /><Server size={15} />
-        <span className="server-copy"><strong>{server.name}</strong><small>{server.user ? `${server.user}@` : ""}{server.host}:{server.port}</small></span>
+        <span className={`status-dot ${state}`} /><Server size={15} />
+        <span className="server-copy"><strong>{server.name}</strong><small>{server.user ? `${server.user}@` : ""}{server.host}:{server.port}{status?.latencyMs != null ? ` · ${status.latencyMs} ms` : ""}</small></span>
       </button>
       <div className="row-actions">
         <button title="Favorite" onClick={() => void toggleFavorite(server)}><Star size={13} fill={server.favorite ? "currentColor" : "none"} /></button>
@@ -224,15 +231,19 @@ export function App() {
     </aside>
 
     <section className="workspace">
-      <header className="topbar"><div className="tabs">{tabs.map((tab) => <button key={tab.id} className={`tab ${activeId === tab.id ? "active" : ""}`} onClick={() => setActiveId(tab.id)}>
-        <Server size={13} /><span>{tab.name}</span>
-        <RefreshCw size={12} onClick={(event) => { event.stopPropagation(); void reconnect(tab); }} />
-        <X size={13} onClick={(event) => { event.stopPropagation(); void closeTab(tab.id); }} />
-      </button>)}</div></header>
+      <header className="topbar"><div className="tabs">{tabs.map((tab) => {
+        const status = statuses[tab.serverId];
+        const state = checking.has(tab.serverId) ? "checking" : status?.state ?? "unknown";
+        return <button key={tab.id} className={`tab ${activeId === tab.id ? "active" : ""}`} onClick={() => setActiveId(tab.id)}>
+          <span className={`session-dot ${state}`} /><span>{tab.name}</span>
+          <RefreshCw size={12} onClick={(event) => { event.stopPropagation(); void reconnect(tab); }} />
+          <X size={13} onClick={(event) => { event.stopPropagation(); void closeTab(tab.id); }} />
+        </button>;
+      })}</div></header>
       {activeId ? <div ref={terminalHost} className="terminal-host" /> : <div className="welcome"><div className="welcome-icon"><Server size={30} /></div><h1>Your servers, one click away</h1><p>Add a server to SSHDeck or import an existing OpenSSH host. Private keys stay managed by OpenSSH.</p></div>}
     </section>
 
-    <ToolsPanel servers={servers} activeSessionId={activeId} activeServerId={activeTab?.serverId ?? null} onError={setError} />
+    <ToolsPanel servers={servers} activeSessionId={activeId} activeServerId={activeTab?.serverId ?? null} activeStatus={activeStatus} statusChecking={activeTab ? checking.has(activeTab.serverId) : false} onRefreshStatus={async () => { if (activeTab) await refreshServer(activeTab.serverId); }} onError={setError} />
 
     {draft && <div className="modal-backdrop"><form className="modal" onSubmit={(event) => void save(event)}>
       <div className="modal-head"><div><h2>{draft.id ? "Edit server" : "Add server"}</h2><p>Stored locally by SSHDeck. Private key contents are never copied.</p></div><button type="button" className="icon-button" onClick={() => setDraft(null)}><X size={16} /></button></div>
