@@ -520,7 +520,7 @@ export function App() {
   }
 
   return <main className="app-shell">
-    <SidebarV2 favorites={favorites} groups={groups} query={query} statuses={statuses} checking={checking} onQueryChange={setQuery} onAdd={openNewServer} onImport={() => setImportOpen(true)} onConnect={(server) => void connect(server)} onFavorite={(server) => void toggleFavorite(server)} onExport={(server) => setExportServer(server)} onEdit={openEditServer} onDelete={(server) => setDeleteServer(server)} />
+    <SidebarV2 servers={servers} favorites={favorites} groups={groups} query={query} statuses={statuses} checking={checking} onQueryChange={setQuery} onAdd={openNewServer} onImport={() => setImportOpen(true)} onConnect={(server) => void connect(server)} onFavorite={(server) => void toggleFavorite(server)} onExport={(server) => setExportServer(server)} onEdit={openEditServer} onDelete={(server) => setDeleteServer(server)} />
 
     <section className="workspace">
       <SessionTabs

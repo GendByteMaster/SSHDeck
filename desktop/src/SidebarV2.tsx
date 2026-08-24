@@ -16,7 +16,7 @@ import {
   Waypoints,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useCommandContextMenu } from "./commands/ContextMenuService";
 import { ServerStatus } from "./serverStatus";
 import { SftpBrowser } from "./SftpBrowser";
@@ -36,6 +36,7 @@ export type SidebarServer = {
 };
 
 type Props = {
+  servers: SidebarServer[];
   favorites: SidebarServer[];
   groups: [string, SidebarServer[]][];
   query: string;
@@ -120,14 +121,14 @@ function ServerItem({ server, status, checking, selected, onSelect, onContextMen
   </motion.div>;
 }
 
-export function SidebarV2({ favorites, groups, query, statuses, checking, onQueryChange, onAdd, onImport, onConnect, onFavorite, onExport, onEdit, onDelete }: Props) {
+export function SidebarV2({ servers, favorites, groups, query, statuses, checking, onQueryChange, onAdd, onImport, onConnect, onFavorite, onExport, onEdit, onDelete }: Props) {
   const count = favorites.length + groups.reduce((sum, [, items]) => sum + items.length, 0);
   const dragStart = useRef<{ x: number; width: number } | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const [view, setView] = useState<SidebarView>("servers");
   const { registerAppActions, primaryWidth, setPrimaryWidth, selectedServer, setSelectedServer } = useWorkbench();
   const popupCommands = useCommandContextMenu();
-  const allServers = useMemo(() => [...favorites, ...groups.flatMap(([, items]) => items)], [favorites, groups]);
+  const allServers = servers;
 
   useEffect(() => {
     registerAppActions({ addServer: onAdd, importOpenSsh: onImport, focusServerSearch: () => { setView("servers"); searchRef.current?.focus(); searchRef.current?.select(); } });
