@@ -128,11 +128,6 @@ export function AppMenuBar() {
     className="sshdeck-menu-bar fixed inset-x-0 top-0 z-50 flex h-[36px] select-none items-center border-b border-white/[0.065] bg-[#0a0d12]/[0.985] px-2 text-zinc-400 shadow-[0_1px_0_rgba(0,0,0,.35)] backdrop-blur-xl"
     aria-label="SSHDeck application menu"
   >
-    <div className="mr-1.5 flex h-7 items-center gap-2 rounded-lg px-2 text-[11px] font-semibold tracking-[-0.01em] text-zinc-300">
-      <span className="grid size-5 place-items-center rounded-md bg-zinc-100 text-[9px] font-black text-zinc-950">S</span>
-      <span className="hidden min-[720px]:inline">SSHDeck</span>
-    </div>
-
     <nav className="flex h-full items-center gap-0.5" aria-label="Application commands">
       {groups.map(({ id, label, icon: Icon }) => {
         const open = openGroup === id;
