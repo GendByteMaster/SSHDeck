@@ -11,7 +11,6 @@ import {
   TerminalSquare,
   UploadCloud,
 } from "lucide-react";
-import { useEffect } from "react";
 import { PanelTab, useWorkbench } from "./WorkbenchContext";
 
 const panelTabs: { id: PanelTab; label: string; icon: typeof TerminalSquare }[] = [
@@ -29,18 +28,10 @@ function PanelBody({ tab, name }: { tab: PanelTab; name: string }) {
     transfers: ["Transfers", "SFTP transfer queue foundation. No transfer is currently active."],
   }[tab];
 
-  return (
-    <motion.div
-      key={tab}
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16, ease: "easeOut" }}
-      className="flex h-full flex-col items-start justify-center gap-1.5 px-6 py-4"
-    >
-      <strong className="text-[13px] font-semibold text-zinc-200">{copy[0]}</strong>
-      <span className="max-w-3xl text-[11px] leading-5 text-zinc-500">{copy[1]}</span>
-    </motion.div>
-  );
+  return <motion.div key={tab} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: "easeOut" }} className="flex h-full flex-col items-start justify-center gap-1.5 px-6 py-4">
+    <strong className="text-[13px] font-semibold text-zinc-200">{copy[0]}</strong>
+    <span className="max-w-3xl text-[11px] leading-5 text-zinc-500">{copy[1]}</span>
+  </motion.div>;
 }
 
 function stateDotClass(state: string) {
@@ -62,89 +53,22 @@ export function WorkbenchChrome() {
     setSecondaryVisible,
     setPanelVisible,
     choosePanel,
-    requestSelectSession,
   } = useWorkbench();
-
-  useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle("wb-primary-hidden", !primaryVisible);
-    root.classList.toggle("wb-secondary-hidden", !secondaryVisible);
-    root.classList.toggle("wb-panel-open", panelVisible);
-    return () => {
-      root.classList.remove("wb-primary-hidden", "wb-secondary-hidden", "wb-panel-open");
-    };
-  }, [panelVisible, primaryVisible, secondaryVisible]);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey)) return;
-      const key = event.key.toLowerCase();
-      if (key === "b" && event.altKey) {
-        event.preventDefault();
-        setSecondaryVisible(!secondaryVisible);
-      } else if (key === "b") {
-        event.preventDefault();
-        setPrimaryVisible(!primaryVisible);
-      } else if (key === "j") {
-        event.preventDefault();
-        setPanelVisible(!panelVisible);
-      } else if (!event.altKey) {
-        const index = Number(event.key);
-        if (index >= 1 && index <= 9) {
-          event.preventDefault();
-          requestSelectSession(index - 1);
-        }
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [panelVisible, primaryVisible, requestSelectSession, secondaryVisible, setPanelVisible, setPrimaryVisible, setSecondaryVisible]);
 
   return <>
     <AnimatePresence initial={false}>
-      {panelVisible && (
-        <motion.section
-          key="bottom-panel"
-          initial={{ y: 18, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: 16, opacity: 0 }}
-          transition={{ duration: 0.18, ease: "easeOut" }}
-          className="wb-bottom-panel fixed inset-x-0 z-20 grid border-t border-white/[0.07] bg-[#0c0f14]/98 shadow-[0_-16px_40px_rgba(0,0,0,.24)] backdrop-blur-xl"
-          style={{ bottom: "var(--wb-statusbar-height)", height: "var(--wb-panel-height)", gridTemplateRows: "42px minmax(0,1fr)" }}
-          aria-label="Workbench panel"
-        >
-          <header className="flex min-w-0 items-center gap-1 border-b border-white/[0.055] px-2">
-            {panelTabs.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => choosePanel(id)}
-                className={`relative flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-medium transition-colors ${panelTab === id ? "bg-[#4f7cff]/12 text-zinc-100" : "text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300"}`}
-              >
-                <Icon size={14} /> {label}
-                {panelTab === id && <motion.span layoutId="panel-tab-indicator" className="absolute inset-x-2 -bottom-[5px] h-px bg-[#6c8dff]" />}
-              </button>
-            ))}
-            <span className="flex-1" />
-            <Button
-              isIconOnly
-              aria-label="Hide panel"
-              onPress={() => setPanelVisible(false)}
-              className="size-8 min-w-8 rounded-lg bg-transparent text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200"
-            >
-              <ChevronDown size={15} />
-            </Button>
-          </header>
-          <PanelBody tab={panelTab} name={session.name} />
-        </motion.section>
-      )}
+      {panelVisible && <motion.section key="bottom-panel" initial={{ y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 16, opacity: 0 }} transition={{ duration: 0.18, ease: "easeOut" }} className="wb-bottom-panel fixed inset-x-0 z-20 grid border-t border-white/[0.07] bg-[#0c0f14]/98 shadow-[0_-16px_40px_rgba(0,0,0,.24)] backdrop-blur-xl" style={{ bottom: "var(--wb-statusbar-height)", height: "var(--wb-panel-height)", gridTemplateRows: "42px minmax(0,1fr)" }} aria-label="Workbench panel">
+        <header className="flex min-w-0 items-center gap-1 border-b border-white/[0.055] px-2">
+          {panelTabs.map(({ id, label, icon: Icon }) => <button key={id} type="button" onClick={() => choosePanel(id)} className={`relative flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-medium transition-colors ${panelTab === id ? "bg-[#4f7cff]/12 text-zinc-100" : "text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300"}`}><Icon size={14} /> {label}{panelTab === id && <motion.span layoutId="panel-tab-indicator" className="absolute inset-x-2 -bottom-[5px] h-px bg-[#6c8dff]" />}</button>)}
+          <span className="flex-1" />
+          <Button isIconOnly aria-label="Hide panel" onPress={() => setPanelVisible(false)} className="size-8 min-w-8 rounded-lg bg-transparent text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200"><ChevronDown size={15} /></Button>
+        </header>
+        <PanelBody tab={panelTab} name={session.name} />
+      </motion.section>}
     </AnimatePresence>
 
     <footer className="wb-statusbar fixed inset-x-0 bottom-0 z-30 flex h-7 select-none items-center gap-3 border-t border-white/[0.065] bg-[#0a0d12]/98 px-2.5 text-[10.5px] text-zinc-500 backdrop-blur-xl">
-      <div className="flex items-center gap-1.5 capitalize">
-        <span className={`size-1.5 rounded-full ${stateDotClass(session.state)}`} />
-        {session.state === "idle" ? "No session" : session.state}
-      </div>
+      <div className="flex items-center gap-1.5 capitalize"><span className={`size-1.5 rounded-full ${stateDotClass(session.state)}`} />{session.state === "idle" ? "No session" : session.state}</div>
       <span className="max-w-64 truncate text-zinc-400">{session.name}</span>
       <span className="hidden sm:inline">OpenSSH</span>
       {session.latency && <span className="hidden sm:inline">{session.latency}</span>}
