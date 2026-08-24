@@ -38,7 +38,7 @@ export const activityFeatures: WorkbenchFeature<ActivityFeatureId>[] = [
     id: "search",
     label: "Search",
     description: "Search across SSHDeck workspace entities.",
-    readiness: "planned",
+    readiness: "ready",
   },
   {
     id: "ports",

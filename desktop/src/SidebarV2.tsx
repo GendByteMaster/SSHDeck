@@ -20,6 +20,7 @@ import { useEffect, useRef, useState } from "react";
 import { useCommandContextMenu } from "./commands/ContextMenuService";
 import { HistoryWorkspace } from "./HistoryWorkspace";
 import { PortsWorkspace } from "./PortsWorkspace";
+import { SearchWorkspace } from "./SearchWorkspace";
 import { ServerStatus } from "./serverStatus";
 import { SessionsWorkspace } from "./SessionsWorkspace";
 import { SftpBrowser } from "./SftpBrowser";
@@ -56,7 +57,7 @@ type Props = {
   onDelete: (server: SidebarServer) => void;
 };
 
-type SidebarView = "servers" | "sftp" | "ports" | "sessions" | "history";
+type SidebarView = "servers" | "sftp" | "search" | "ports" | "sessions" | "history";
 
 const clamp = (value: number) => Math.min(520, Math.max(280, value));
 
@@ -131,6 +132,7 @@ export function SidebarV2({ servers, favorites, groups, query, statuses, checkin
       addServer: onAdd,
       importOpenSsh: onImport,
       focusServerSearch: () => { setView("servers"); searchRef.current?.focus(); searchRef.current?.select(); },
+      showSearchWorkspace: () => setView("search"),
       showSessionsWorkspace: () => setView("sessions"),
       showHistoryWorkspace: () => setView("history"),
     });
@@ -145,7 +147,7 @@ export function SidebarV2({ servers, favorites, groups, query, statuses, checkin
   function showServerContextMenu(server: SidebarServer, event: React.MouseEvent<HTMLDivElement>) { event.preventDefault(); selectServer(server); void popupCommands(["server.connect", "server.edit", "server.exportOpenSsh", "server.delete"]); }
 
   function activateActivity(id: ActivityFeatureId) {
-    if (id === "servers" || id === "sftp" || id === "ports" || id === "sessions" || id === "history") { setView(id); return; }
+    if (id === "servers" || id === "sftp" || id === "search" || id === "ports" || id === "sessions" || id === "history") { setView(id); return; }
     if (id === "transfers") choosePanel("transfers");
   }
 
@@ -162,7 +164,7 @@ export function SidebarV2({ servers, favorites, groups, query, statuses, checkin
       <div className="mb-2 grid size-9 place-items-center rounded-xl bg-zinc-100 text-[13px] font-bold text-zinc-900 shadow-sm">S</div>
       <div className="flex w-full flex-col items-center gap-1">
         {activityItems.map(({ id, label, icon: Icon }) => {
-          const active = id === "transfers" ? panelVisible && panelTab === "transfers" : (id === "servers" || id === "sftp" || id === "ports" || id === "sessions" || id === "history") && view === id;
+          const active = id === "transfers" ? panelVisible && panelTab === "transfers" : (id === "servers" || id === "sftp" || id === "search" || id === "ports" || id === "sessions" || id === "history") && view === id;
           return <button key={id} type="button" title={label} aria-label={label} aria-current={active ? "page" : undefined} onClick={() => activateActivity(id)} className={`relative grid size-10 place-items-center rounded-xl transition-colors ${active ? "bg-[#4f7cff]/12 text-[#89a5ff]" : "text-zinc-600 hover:bg-white/[0.035] hover:text-zinc-400"}`}>{active && <span className="absolute -left-1.5 h-5 w-0.5 rounded-r-full bg-[#6f91ff]" />}<Icon size={18} strokeWidth={1.8} /></button>;
         })}
       </div>
@@ -179,7 +181,7 @@ export function SidebarV2({ servers, favorites, groups, query, statuses, checkin
         {groups.map(([group, items]) => <section key={group} className="mb-4"><div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-700">{group}</div>{items.map(renderServer)}</section>)}
         {count === 0 && <div className="mx-2 mt-6 flex flex-col items-center rounded-2xl border border-dashed border-white/[0.07] px-4 py-7 text-center"><div className="grid size-9 place-items-center rounded-xl bg-white/[0.035] text-zinc-600"><Server size={16} /></div><strong className="mt-3 text-[12px] font-medium text-zinc-400">No servers</strong><span className="mt-1 max-w-44 text-[11px] leading-5 text-zinc-700">Add a server or import your OpenSSH config.</span></div>}
       </div>
-    </div> : view === "sftp" ? <div className="flex min-h-0 min-w-0 flex-col bg-[#0d1015]/92"><SftpBrowser servers={allServers} selectedServerId={selectedServer.id} onSelectServer={selectSftpServer} /></div> : view === "ports" ? <PortsWorkspace servers={allServers} activeServerId={selectedServer.id} /> : view === "sessions" ? <SessionsWorkspace /> : <HistoryWorkspace servers={allServers} onReconnectServer={(serverId) => { const server = allServers.find((item) => item.id === serverId); if (server) onConnect(server); }} />}
+    </div> : view === "sftp" ? <div className="flex min-h-0 min-w-0 flex-col bg-[#0d1015]/92"><SftpBrowser servers={allServers} selectedServerId={selectedServer.id} onSelectServer={selectSftpServer} /></div> : view === "search" ? <SearchWorkspace servers={allServers} onConnectServer={(serverId) => { const server = allServers.find((item) => item.id === serverId); if (server) onConnect(server); }} /> : view === "ports" ? <PortsWorkspace servers={allServers} activeServerId={selectedServer.id} /> : view === "sessions" ? <SessionsWorkspace /> : <HistoryWorkspace servers={allServers} onReconnectServer={(serverId) => { const server = allServers.find((item) => item.id === serverId); if (server) onConnect(server); }} />}
 
     <div role="separator" aria-orientation="vertical" aria-label="Resize server sidebar" className="absolute -right-1.5 top-0 z-30 h-full w-3 cursor-col-resize touch-none after:absolute after:left-[5px] after:top-0 after:h-full after:w-px after:bg-transparent hover:after:bg-[#6f91ff]/50" onPointerDown={beginResize} onPointerMove={resize} onPointerUp={endResize} />
   </aside>;
