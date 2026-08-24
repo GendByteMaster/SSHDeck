@@ -15,7 +15,7 @@ import {
   Waypoints,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { ServerStatus } from "./serverStatus";
 import { useWorkbench } from "./WorkbenchContext";
 
@@ -61,120 +61,57 @@ const activityItems = [
 
 function statusClass(state: string) {
   switch (state) {
-    case "online":
-      return "bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.08)]";
-    case "auth_required":
-      return "bg-amber-400 shadow-[0_0_0_3px_rgba(251,191,36,0.08)]";
+    case "online": return "bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.08)]";
+    case "auth_required": return "bg-amber-400 shadow-[0_0_0_3px_rgba(251,191,36,0.08)]";
     case "offline":
-    case "error":
-      return "bg-rose-400 shadow-[0_0_0_3px_rgba(251,113,133,0.08)]";
-    case "checking":
-      return "animate-pulse bg-sky-400";
-    default:
-      return "bg-zinc-600";
+    case "error": return "bg-rose-400 shadow-[0_0_0_3px_rgba(251,113,133,0.08)]";
+    case "checking": return "animate-pulse bg-sky-400";
+    default: return "bg-zinc-600";
   }
 }
 
-function IconAction({ label, children, onClick, danger = false }: {
-  label: string;
-  children: React.ReactNode;
-  onClick: () => void;
-  danger?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className={`grid size-7 place-items-center rounded-lg border border-transparent transition-colors ${
-        danger
-          ? "text-zinc-500 hover:border-rose-400/15 hover:bg-rose-400/10 hover:text-rose-300"
-          : "text-zinc-500 hover:border-white/[0.06] hover:bg-white/[0.05] hover:text-zinc-200"
-      }`}
-    >
-      {children}
-    </button>
-  );
+function IconAction({ label, children, onClick, danger = false }: { label: string; children: React.ReactNode; onClick: () => void; danger?: boolean }) {
+  return <button type="button" aria-label={label} title={label} onClick={onClick} className={`grid size-7 place-items-center rounded-lg border border-transparent transition-colors ${danger ? "text-zinc-500 hover:border-rose-400/15 hover:bg-rose-400/10 hover:text-rose-300" : "text-zinc-500 hover:border-white/[0.06] hover:bg-white/[0.05] hover:text-zinc-200"}`}>{children}</button>;
 }
 
-function ServerItem({ server, status, checking, onConnect, onFavorite, onExport, onEdit, onDelete }: {
-  server: SidebarServer;
-  status?: ServerStatus;
-  checking: boolean;
-  onConnect: () => void;
-  onFavorite: () => void;
-  onExport: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
+function ServerItem({ server, status, checking, onConnect, onFavorite, onExport, onEdit, onDelete }: { server: SidebarServer; status?: ServerStatus; checking: boolean; onConnect: () => void; onFavorite: () => void; onExport: () => void; onEdit: () => void; onDelete: () => void }) {
   const state = checking ? "checking" : status?.state ?? "unknown";
-
-  return (
-    <motion.div
-      layout="position"
-      initial={{ opacity: 0, y: 3 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16 }}
-      className="group relative mb-1 flex min-h-14 items-center rounded-xl border border-transparent hover:border-white/[0.055] hover:bg-white/[0.035]"
-    >
-      <button
-        type="button"
-        onClick={onConnect}
-        className="server-connect flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-[#5f86ff]/60"
-      >
-        <span className={`size-2 shrink-0 rounded-full ${statusClass(state)}`} />
-        <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-white/[0.055] bg-white/[0.025] text-zinc-500">
-          <Server size={15} strokeWidth={1.8} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <strong className="block truncate text-[13px] font-medium leading-5 text-zinc-200">{server.name}</strong>
-          <small className="mt-0.5 block truncate text-[11px] leading-4 text-zinc-600">
-            {server.user ? `${server.user}@` : ""}{server.host}:{server.port}
-            {status?.latencyMs != null ? ` · ${status.latencyMs} ms` : ""}
-          </small>
-        </span>
-      </button>
-
-      <div className="mr-1 hidden shrink-0 items-center gap-0.5 rounded-lg bg-[#0c0f14]/95 pl-1 group-hover:flex group-focus-within:flex">
-        <IconAction label="Favorite" onClick={onFavorite}>
-          <Star size={13} fill={server.favorite ? "currentColor" : "none"} />
-        </IconAction>
-        <IconAction label="Export OpenSSH snippet" onClick={onExport}><Copy size={13} /></IconAction>
-        <IconAction label="Edit server" onClick={onEdit}><Pencil size={13} /></IconAction>
-        <IconAction label="Delete server" onClick={onDelete} danger><Trash2 size={13} /></IconAction>
-      </div>
-    </motion.div>
-  );
+  return <motion.div layout="position" initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16 }} className="group relative mb-1 flex min-h-14 items-center rounded-xl border border-transparent hover:border-white/[0.055] hover:bg-white/[0.035]">
+    <button type="button" onClick={onConnect} className="server-connect flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-[#5f86ff]/60">
+      <span className={`size-2 shrink-0 rounded-full ${statusClass(state)}`} />
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-white/[0.055] bg-white/[0.025] text-zinc-500"><Server size={15} strokeWidth={1.8} /></span>
+      <span className="min-w-0 flex-1">
+        <strong className="block truncate text-[13px] font-medium leading-5 text-zinc-200">{server.name}</strong>
+        <small className="mt-0.5 block truncate text-[11px] leading-4 text-zinc-600">{server.user ? `${server.user}@` : ""}{server.host}:{server.port}{status?.latencyMs != null ? ` · ${status.latencyMs} ms` : ""}</small>
+      </span>
+    </button>
+    <div className="mr-1 hidden shrink-0 items-center gap-0.5 rounded-lg bg-[#0c0f14]/95 pl-1 group-hover:flex group-focus-within:flex">
+      <IconAction label="Favorite" onClick={onFavorite}><Star size={13} fill={server.favorite ? "currentColor" : "none"} /></IconAction>
+      <IconAction label="Export OpenSSH snippet" onClick={onExport}><Copy size={13} /></IconAction>
+      <IconAction label="Edit server" onClick={onEdit}><Pencil size={13} /></IconAction>
+      <IconAction label="Delete server" onClick={onDelete} danger><Trash2 size={13} /></IconAction>
+    </div>
+  </motion.div>;
 }
 
 export function SidebarV2({ favorites, groups, query, statuses, checking, onQueryChange, onAdd, onImport, onConnect, onFavorite, onExport, onEdit, onDelete }: Props) {
   const count = favorites.length + groups.reduce((sum, [, items]) => sum + items.length, 0);
-  const [width, setWidth] = useState(320);
   const dragStart = useRef<{ x: number; width: number } | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
-  const { registerAppActions } = useWorkbench();
+  const { registerAppActions, primaryWidth, setPrimaryWidth } = useWorkbench();
 
   useEffect(() => {
-    registerAppActions({
-      addServer: onAdd,
-      importOpenSsh: onImport,
-      focusServerSearch: () => {
-        searchRef.current?.focus();
-        searchRef.current?.select();
-      },
-    });
+    registerAppActions({ addServer: onAdd, importOpenSsh: onImport, focusServerSearch: () => { searchRef.current?.focus(); searchRef.current?.select(); } });
   }, [onAdd, onImport, registerAppActions]);
 
   function beginResize(event: React.PointerEvent<HTMLDivElement>) {
-    dragStart.current = { x: event.clientX, width };
+    dragStart.current = { x: event.clientX, width: primaryWidth };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
   function resize(event: React.PointerEvent<HTMLDivElement>) {
     if (!dragStart.current) return;
-    const next = clamp(dragStart.current.width + event.clientX - dragStart.current.x);
-    setWidth(next);
+    setPrimaryWidth(clamp(dragStart.current.width + event.clientX - dragStart.current.x));
   }
 
   function endResize(event: React.PointerEvent<HTMLDivElement>) {
@@ -183,137 +120,28 @@ export function SidebarV2({ favorites, groups, query, statuses, checking, onQuer
     event.currentTarget.releasePointerCapture(event.pointerId);
   }
 
-  return (
-    <aside
-      className="workbench-primary relative grid h-full shrink-0 grid-cols-[52px_minmax(0,1fr)] overflow-visible border-r border-white/[0.055] bg-[#0a0c10]/95 text-zinc-200"
-      style={{ width }}
-    >
-      <nav className="flex min-h-0 flex-col items-center border-r border-white/[0.055] bg-[#080a0e] px-1.5 py-2" aria-label="Workbench navigation">
-        <div className="mb-2 grid size-9 place-items-center rounded-xl bg-zinc-100 text-[13px] font-bold text-zinc-900 shadow-sm">S</div>
-
-        <div className="flex w-full flex-col items-center gap-1">
-          {activityItems.map(({ label, icon: Icon, active }) => (
-            <button
-              key={label}
-              type="button"
-              title={active ? label : `${label} · coming soon`}
-              aria-label={label}
-              aria-current={active ? "page" : undefined}
-              disabled={!active}
-              className={`relative grid size-10 place-items-center rounded-xl transition-colors ${
-                active
-                  ? "bg-[#4f7cff]/12 text-[#89a5ff]"
-                  : "text-zinc-600 hover:bg-white/[0.035] hover:text-zinc-400 disabled:cursor-default disabled:opacity-65"
-              }`}
-            >
-              {active && <span className="absolute -left-1.5 h-5 w-0.5 rounded-r-full bg-[#6f91ff]" />}
-              <Icon size={18} strokeWidth={1.8} />
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-auto">
-          <button type="button" title="Settings · coming soon" aria-label="Settings" disabled className="grid size-10 place-items-center rounded-xl text-zinc-600 opacity-65">
-            <Settings size={18} strokeWidth={1.8} />
-          </button>
-        </div>
-      </nav>
-
-      <div className="flex min-h-0 min-w-0 flex-col bg-[#0d1015]/92">
-        <header className="px-3.5 pb-3 pt-3.5">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <span className="block text-[10px] font-semibold uppercase tracking-[0.13em] text-zinc-600">Servers</span>
-              <strong className="mt-0.5 block truncate text-[14px] font-semibold tracking-[-0.01em] text-zinc-200">Connections</strong>
-            </div>
-            <span className="grid min-w-6 place-items-center rounded-full border border-white/[0.06] bg-white/[0.025] px-1.5 py-0.5 text-[10px] font-medium text-zinc-500">{count}</span>
-          </div>
-
-          <div className="grid grid-cols-[1fr_auto] gap-2">
-            <HeroButton
-              onPress={onAdd}
-              className="h-9 rounded-xl bg-[#4f7cff] px-3 text-[12px] font-medium text-white shadow-[0_8px_22px_rgba(79,124,255,0.2)]"
-            >
-              <Plus size={14} /> Add server
-            </HeroButton>
-            <HeroButton
-              onPress={onImport}
-              className="h-9 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 text-[12px] font-medium text-zinc-400"
-            >
-              <Download size={14} /> Import
-            </HeroButton>
-          </div>
-
-          <label className="mt-2.5 flex h-9 items-center gap-2 rounded-xl border border-white/[0.065] bg-[#090b0f] px-3 text-zinc-600 transition-colors focus-within:border-[#5f86ff]/45 focus-within:text-zinc-400">
-            <Search size={14} strokeWidth={1.8} />
-            <input
-              ref={searchRef}
-              value={query}
-              onChange={(event) => onQueryChange(event.target.value)}
-              placeholder="Search servers"
-              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[12px] text-zinc-300 outline-none placeholder:text-zinc-700"
-            />
-          </label>
-        </header>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-4 [scrollbar-color:rgba(255,255,255,.11)_transparent] [scrollbar-width:thin]">
-          {favorites.length > 0 && (
-            <section className="mb-4">
-              <div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-700">Favorites</div>
-              {favorites.map((server) => (
-                <ServerItem
-                  key={server.id}
-                  server={server}
-                  status={statuses[server.id]}
-                  checking={checking.has(server.id)}
-                  onConnect={() => onConnect(server)}
-                  onFavorite={() => onFavorite(server)}
-                  onExport={() => onExport(server)}
-                  onEdit={() => onEdit(server)}
-                  onDelete={() => onDelete(server)}
-                />
-              ))}
-            </section>
-          )}
-
-          {groups.map(([group, items]) => (
-            <section key={group} className="mb-4">
-              <div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-700">{group}</div>
-              {items.map((server) => (
-                <ServerItem
-                  key={server.id}
-                  server={server}
-                  status={statuses[server.id]}
-                  checking={checking.has(server.id)}
-                  onConnect={() => onConnect(server)}
-                  onFavorite={() => onFavorite(server)}
-                  onExport={() => onExport(server)}
-                  onEdit={() => onEdit(server)}
-                  onDelete={() => onDelete(server)}
-                />
-              ))}
-            </section>
-          ))}
-
-          {count === 0 && (
-            <div className="mx-2 mt-6 flex flex-col items-center rounded-2xl border border-dashed border-white/[0.07] px-4 py-7 text-center">
-              <div className="grid size-9 place-items-center rounded-xl bg-white/[0.035] text-zinc-600"><Server size={16} /></div>
-              <strong className="mt-3 text-[12px] font-medium text-zinc-400">No servers</strong>
-              <span className="mt-1 max-w-44 text-[11px] leading-5 text-zinc-700">Add a server or import your OpenSSH config.</span>
-            </div>
-          )}
-        </div>
+  return <aside className="workbench-primary relative grid h-full shrink-0 grid-cols-[52px_minmax(0,1fr)] overflow-visible border-r border-white/[0.055] bg-[#0a0c10]/95 text-zinc-200" style={{ width: primaryWidth }}>
+    <nav className="flex min-h-0 flex-col items-center border-r border-white/[0.055] bg-[#080a0e] px-1.5 py-2" aria-label="Workbench navigation">
+      <div className="mb-2 grid size-9 place-items-center rounded-xl bg-zinc-100 text-[13px] font-bold text-zinc-900 shadow-sm">S</div>
+      <div className="flex w-full flex-col items-center gap-1">
+        {activityItems.map(({ label, icon: Icon, active }) => <button key={label} type="button" title={active ? label : `${label} · coming soon`} aria-label={label} aria-current={active ? "page" : undefined} disabled={!active} className={`relative grid size-10 place-items-center rounded-xl transition-colors ${active ? "bg-[#4f7cff]/12 text-[#89a5ff]" : "text-zinc-600 hover:bg-white/[0.035] hover:text-zinc-400 disabled:cursor-default disabled:opacity-65"}`}>{active && <span className="absolute -left-1.5 h-5 w-0.5 rounded-r-full bg-[#6f91ff]" />}<Icon size={18} strokeWidth={1.8} /></button>)}
       </div>
+      <div className="mt-auto"><button type="button" title="Settings · coming soon" aria-label="Settings" disabled className="grid size-10 place-items-center rounded-xl text-zinc-600 opacity-65"><Settings size={18} strokeWidth={1.8} /></button></div>
+    </nav>
 
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize server sidebar"
-        className="absolute -right-1.5 top-0 z-30 h-full w-3 cursor-col-resize touch-none after:absolute after:left-[5px] after:top-0 after:h-full after:w-px after:bg-transparent hover:after:bg-[#6f91ff]/50"
-        onPointerDown={beginResize}
-        onPointerMove={resize}
-        onPointerUp={endResize}
-      />
-    </aside>
-  );
+    <div className="flex min-h-0 min-w-0 flex-col bg-[#0d1015]/92">
+      <header className="px-3.5 pb-3 pt-3.5">
+        <div className="mb-3 flex items-center justify-between gap-3"><div className="min-w-0"><span className="block text-[10px] font-semibold uppercase tracking-[0.13em] text-zinc-600">Servers</span><strong className="mt-0.5 block truncate text-[14px] font-semibold tracking-[-0.01em] text-zinc-200">Connections</strong></div><span className="grid min-w-6 place-items-center rounded-full border border-white/[0.06] bg-white/[0.025] px-1.5 py-0.5 text-[10px] font-medium text-zinc-500">{count}</span></div>
+        <div className="grid grid-cols-[1fr_auto] gap-2"><HeroButton onPress={onAdd} className="h-9 rounded-xl bg-[#4f7cff] px-3 text-[12px] font-medium text-white shadow-[0_8px_22px_rgba(79,124,255,0.2)]"><Plus size={14} /> Add server</HeroButton><HeroButton onPress={onImport} className="h-9 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 text-[12px] font-medium text-zinc-400"><Download size={14} /> Import</HeroButton></div>
+        <label className="mt-2.5 flex h-9 items-center gap-2 rounded-xl border border-white/[0.065] bg-[#090b0f] px-3 text-zinc-600 transition-colors focus-within:border-[#5f86ff]/45 focus-within:text-zinc-400"><Search size={14} strokeWidth={1.8} /><input ref={searchRef} value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search servers" className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[12px] text-zinc-300 outline-none placeholder:text-zinc-700" /></label>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-4 [scrollbar-color:rgba(255,255,255,.11)_transparent] [scrollbar-width:thin]">
+        {favorites.length > 0 && <section className="mb-4"><div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-700">Favorites</div>{favorites.map((server) => <ServerItem key={server.id} server={server} status={statuses[server.id]} checking={checking.has(server.id)} onConnect={() => onConnect(server)} onFavorite={() => onFavorite(server)} onExport={() => onExport(server)} onEdit={() => onEdit(server)} onDelete={() => onDelete(server)} />)}</section>}
+        {groups.map(([group, items]) => <section key={group} className="mb-4"><div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-700">{group}</div>{items.map((server) => <ServerItem key={server.id} server={server} status={statuses[server.id]} checking={checking.has(server.id)} onConnect={() => onConnect(server)} onFavorite={() => onFavorite(server)} onExport={() => onExport(server)} onEdit={() => onEdit(server)} onDelete={() => onDelete(server)} />)}</section>)}
+        {count === 0 && <div className="mx-2 mt-6 flex flex-col items-center rounded-2xl border border-dashed border-white/[0.07] px-4 py-7 text-center"><div className="grid size-9 place-items-center rounded-xl bg-white/[0.035] text-zinc-600"><Server size={16} /></div><strong className="mt-3 text-[12px] font-medium text-zinc-400">No servers</strong><span className="mt-1 max-w-44 text-[11px] leading-5 text-zinc-700">Add a server or import your OpenSSH config.</span></div>}
+      </div>
+    </div>
+
+    <div role="separator" aria-orientation="vertical" aria-label="Resize server sidebar" className="absolute -right-1.5 top-0 z-30 h-full w-3 cursor-col-resize touch-none after:absolute after:left-[5px] after:top-0 after:h-full after:w-px after:bg-transparent hover:after:bg-[#6f91ff]/50" onPointerDown={beginResize} onPointerMove={resize} onPointerUp={endResize} />
+  </aside>;
 }
