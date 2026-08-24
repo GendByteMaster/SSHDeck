@@ -13,7 +13,7 @@ import {
 import { useCommands } from "./commands/CommandService";
 import { PortsPanel } from "./PortsPanel";
 import { TransfersPanel } from "./TransfersPanel";
-import { useWorkbench } from "./WorkbenchContext";
+import { PanelTab, useWorkbench } from "./WorkbenchContext";
 import { PanelFeatureId, productionPanelFeatures } from "./workbenchFeatures";
 
 const panelIcons: Record<PanelFeatureId, typeof UploadCloud> = {
@@ -22,7 +22,16 @@ const panelIcons: Record<PanelFeatureId, typeof UploadCloud> = {
   transfers: UploadCloud,
 };
 
-const panelTabs = productionPanelFeatures().map((feature) => ({ ...feature, icon: panelIcons[feature.id] }));
+type ReadyPanelTab = {
+  id: PanelTab;
+  label: string;
+  icon: typeof UploadCloud;
+};
+
+const panelTabs: ReadyPanelTab[] = productionPanelFeatures().flatMap((feature) => {
+  if (feature.id !== "ports" && feature.id !== "transfers") return [];
+  return [{ id: feature.id, label: feature.label, icon: panelIcons[feature.id] }];
+});
 
 function stateDotClass(state: string) {
   if (state === "active") return "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,.3)]";
