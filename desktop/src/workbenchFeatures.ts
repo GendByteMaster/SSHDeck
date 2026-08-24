@@ -1,3 +1,5 @@
+// Production UI surfaces must be derived from this registry so planned features
+// cannot accidentally appear as working controls before their end-to-end flow exists.
 export type FeatureReadiness = "ready" | "experimental" | "planned";
 
 export type ActivityFeatureId =
