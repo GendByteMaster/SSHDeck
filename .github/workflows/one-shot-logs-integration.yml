@@ -25,32 +25,27 @@ jobs:
               file = Path(path)
               text = file.read_text()
               if old not in text:
-                  raise SystemExit(f"expected block not found in {path}: {old[:160]!r}")
+                  raise SystemExit(f"expected block not found in {path}: {old[:180]!r}")
               file.write_text(text.replace(old, new, 1))
 
-          # Bottom panel runtime type + persisted layout migration.
           replace_once("desktop/src/WorkbenchContext.tsx", 'export type PanelTab = "ports" | "transfers";', 'export type PanelTab = "ports" | "logs" | "transfers";')
           replace_once("desktop/src/WorkbenchContext.tsx", 'return value === "ports" || value === "transfers";', 'return value === "ports" || value === "logs" || value === "transfers";')
 
-          # Logs becomes a real production panel surface.
-          replace_once("desktop/src/workbenchFeatures.ts", '''    id: "logs",
-              label: "Logs",
-              description: "Structured SSH, SFTP, tunnel, and transfer diagnostics.",
-              readiness: "planned",''', '''    id: "logs",
-              label: "Logs",
-              description: "Structured SSH, SFTP, tunnel, and transfer diagnostics.",
-              readiness: "ready",''')
+          replace_once("desktop/src/workbenchFeatures.ts", '    readiness: "planned",\n  },\n  {\n    id: "transfers",', '    readiness: "ready",\n  },\n  {\n    id: "transfers",')
 
-          # Bottom panel renders the real LogsPanel.
           replace_once("desktop/src/WorkbenchChrome.tsx", 'import { PortsPanel } from "./PortsPanel";', 'import { LogsPanel } from "./LogsPanel";\nimport { PortsPanel } from "./PortsPanel";')
           replace_once("desktop/src/WorkbenchChrome.tsx", 'if (feature.id !== "ports" && feature.id !== "transfers") return [];', 'if (feature.id !== "ports" && feature.id !== "logs" && feature.id !== "transfers") return [];')
           replace_once("desktop/src/WorkbenchChrome.tsx", '{panelTab === "ports" ? <PortsPanel /> : <TransfersPanel />}', '{panelTab === "ports" ? <PortsPanel /> : panelTab === "logs" ? <LogsPanel /> : <TransfersPanel />}')
 
-          # Common command path for View menu / Command Palette.
           replace_once("desktop/src/commands/CommandService.tsx", '  | "workbench.panel.ports"\n  | "workbench.panel.transfers"', '  | "workbench.panel.ports"\n  | "workbench.panel.logs"\n  | "workbench.panel.transfers"')
           replace_once("desktop/src/commands/CommandService.tsx", '''      {
                 id: "workbench.panel.transfers",
-                title: "Show Transfers Panel",''', '''      {
+                title: "Show Transfers Panel",
+                description: "Open the transfer queue",
+                category: "Panel",
+                enabled: true,
+                run: () => workbench.choosePanel("transfers"),
+              },'''.replace("                ", "        "), '''      {
                 id: "workbench.panel.logs",
                 title: "Show Logs Panel",
                 description: "Open structured SSHDeck diagnostics and runtime events",
@@ -60,14 +55,18 @@ jobs:
               },
               {
                 id: "workbench.panel.transfers",
-                title: "Show Transfers Panel",''')
+                title: "Show Transfers Panel",
+                description: "Open the transfer queue",
+                category: "Panel",
+                enabled: true,
+                run: () => workbench.choosePanel("transfers"),
+              },'''.replace("                ", "        "))
 
-          # Session transitions: no raw terminal output, only logical state changes.
           replace_once("desktop/src/SessionContext.tsx", 'import { hydrateSessionHistory, saveSessionHistory, SESSION_HISTORY_LIMIT, SessionHistoryItem, SessionView } from "./sessionLifecycle";', 'import { useLogs } from "./LogContext";\nimport { hydrateSessionHistory, saveSessionHistory, SESSION_HISTORY_LIMIT, SessionHistoryItem, SessionView } from "./sessionLifecycle";')
           replace_once("desktop/src/SessionContext.tsx", '''  const runtimeActions = useRef<SessionRuntimeActions>({});
             const { registerAppActions } = useWorkbench();
 
-            useEffect(() => { sessionsRef.current = sessions; }, [sessions]);''', '''  const runtimeActions = useRef<SessionRuntimeActions>({});
+            useEffect(() => { sessionsRef.current = sessions; }, [sessions]);'''.replace("            ", "  "), '''  const runtimeActions = useRef<SessionRuntimeActions>({});
             const previousSessionStates = useRef(new Map<string, SessionView["state"]>());
             const { registerAppActions } = useWorkbench();
             const { addLog } = useLogs();
@@ -88,60 +87,59 @@ jobs:
               }
               previousSessionStates.current = next;
               sessionsRef.current = sessions;
-            }, [addLog, sessions]);''')
+            }, [addLog, sessions]);'''.replace("            ", "  "))
           replace_once("desktop/src/SessionContext.tsx", '''  const requestReconnect = useCallback((session: SessionView) => {
               void runtimeActions.current.reconnect?.(session);
-            }, []);''', '''  const requestReconnect = useCallback((session: SessionView) => {
+            }, []);'''.replace("              ", "    "), '''  const requestReconnect = useCallback((session: SessionView) => {
               addLog({ subsystem: "ssh", severity: "info", message: `Reconnect requested: ${session.name}`, serverId: session.serverId, sessionId: session.id });
               void runtimeActions.current.reconnect?.(session);
-            }, [addLog]);''')
+            }, [addLog]);'''.replace("              ", "    "))
           replace_once("desktop/src/SessionContext.tsx", '''  const requestClose = useCallback((session: SessionView) => {
               void runtimeActions.current.close?.(session);
-            }, []);''', '''  const requestClose = useCallback((session: SessionView) => {
+            }, []);'''.replace("              ", "    "), '''  const requestClose = useCallback((session: SessionView) => {
               addLog({ subsystem: "session", severity: "info", message: `Close requested: ${session.name}`, serverId: session.serverId, sessionId: session.id });
               void runtimeActions.current.close?.(session);
-            }, [addLog]);''')
+            }, [addLog]);'''.replace("              ", "    "))
 
-          # Tunnel failures/restarts and explicit lifecycle actions.
           replace_once("desktop/src/TunnelContext.tsx", 'import { TunnelProcessStatus } from "./tunnelHealth";', 'import { useLogs } from "./LogContext";\nimport { TunnelProcessStatus } from "./tunnelHealth";')
           replace_once("desktop/src/TunnelContext.tsx", '''  const attempts = useRef(new Map<string, number>());
-            const { registerAppActions, selectedTunnel, setSelectedTunnel } = useWorkbench();''', '''  const attempts = useRef(new Map<string, number>());
+            const { registerAppActions, selectedTunnel, setSelectedTunnel } = useWorkbench();'''.replace("            ", "  "), '''  const attempts = useRef(new Map<string, number>());
             const previousTunnelStates = useRef(new Map<string, string>());
             const { registerAppActions, selectedTunnel, setSelectedTunnel } = useWorkbench();
-            const { addLog } = useLogs();''')
+            const { addLog } = useLogs();'''.replace("            ", "  "))
           replace_once("desktop/src/TunnelContext.tsx", '''      syncSelected(id, status);
-              setError(null);
-            } catch (value) {
-              const text = `Could not start tunnel: ${message(value)}`;
-              setError(text);''', '''      syncSelected(id, status);
-              const tunnel = tunnelsRef.current.find((item) => item.id === id);
-              addLog({ subsystem: "tunnel", severity: "info", message: `Tunnel started: ${tunnel?.name ?? id}`, detail: `state=${status.state}`, serverId: tunnel?.serverId ?? null, resourceId: id });
-              setError(null);
-            } catch (value) {
-              const text = `Could not start tunnel: ${message(value)}`;
-              const tunnel = tunnelsRef.current.find((item) => item.id === id);
-              addLog({ subsystem: "tunnel", severity: "error", message: `Tunnel start failed: ${tunnel?.name ?? id}`, detail: text, serverId: tunnel?.serverId ?? null, resourceId: id });
-              setError(text);''')
+                setError(null);
+              } catch (value) {
+                const text = `Could not start tunnel: ${message(value)}`;
+                setError(text);'''.replace("                ", "      "), '''      syncSelected(id, status);
+                const tunnel = tunnelsRef.current.find((item) => item.id === id);
+                addLog({ subsystem: "tunnel", severity: "info", message: `Tunnel started: ${tunnel?.name ?? id}`, detail: `state=${status.state}`, serverId: tunnel?.serverId ?? null, resourceId: id });
+                setError(null);
+              } catch (value) {
+                const text = `Could not start tunnel: ${message(value)}`;
+                const tunnel = tunnelsRef.current.find((item) => item.id === id);
+                addLog({ subsystem: "tunnel", severity: "error", message: `Tunnel start failed: ${tunnel?.name ?? id}`, detail: text, serverId: tunnel?.serverId ?? null, resourceId: id });
+                setError(text);'''.replace("                ", "      "))
           replace_once("desktop/src/TunnelContext.tsx", '''      syncSelected(id, status);
-              setError(null);
-            } catch (value) {
-              const text = `Could not stop tunnel: ${message(value)}`;''', '''      syncSelected(id, status);
-              const tunnel = tunnelsRef.current.find((item) => item.id === id);
-              addLog({ subsystem: "tunnel", severity: "info", message: `Tunnel stopped: ${tunnel?.name ?? id}`, detail: `state=${status.state}`, serverId: tunnel?.serverId ?? null, resourceId: id });
-              setError(null);
-            } catch (value) {
-              const text = `Could not stop tunnel: ${message(value)}`;''')
-          replace_once("desktop/src/TunnelContext.tsx", '''        attempt += 1;
+                setError(null);
+              } catch (value) {
+                const text = `Could not stop tunnel: ${message(value)}`;'''.replace("                ", "      "), '''      syncSelected(id, status);
+                const tunnel = tunnelsRef.current.find((item) => item.id === id);
+                addLog({ subsystem: "tunnel", severity: "info", message: `Tunnel stopped: ${tunnel?.name ?? id}`, detail: `state=${status.state}`, serverId: tunnel?.serverId ?? null, resourceId: id });
+                setError(null);
+              } catch (value) {
+                const text = `Could not stop tunnel: ${message(value)}`;'''.replace("                ", "      "))
+          replace_once("desktop/src/TunnelContext.tsx", '''      attempt += 1;
                 attempts.current.set(id, attempt);
-                await new Promise''', '''        attempt += 1;
+                await new Promise'''.replace("                ", "      "), '''      attempt += 1;
                 attempts.current.set(id, attempt);
                 addLog({ subsystem: "tunnel", severity: "warn", message: `Tunnel auto-restart attempt ${attempt}: ${currentTunnel.name}`, serverId: currentTunnel.serverId, resourceId: id });
-                await new Promise''')
+                await new Promise'''.replace("                ", "      "))
           replace_once("desktop/src/TunnelContext.tsx", '''          syncSelected(id, status);
                     setError(null);
                     return;
                   } catch (value) {
-                    if (attempt >= 3) setError(`Tunnel auto-restart failed after ${attempt} attempts: ${message(value)}`);''', '''          syncSelected(id, status);
+                    if (attempt >= 3) setError(`Tunnel auto-restart failed after ${attempt} attempts: ${message(value)}`);'''.replace("                    ", "          "), '''          syncSelected(id, status);
                     addLog({ subsystem: "tunnel", severity: "info", message: `Tunnel auto-restart succeeded: ${currentTunnel.name}`, detail: `attempt=${attempt}`, serverId: currentTunnel.serverId, resourceId: id });
                     setError(null);
                     return;
@@ -150,30 +148,29 @@ jobs:
                       const text = `Tunnel auto-restart failed after ${attempt} attempts: ${message(value)}`;
                       addLog({ subsystem: "tunnel", severity: "error", message: `Tunnel auto-restart exhausted: ${currentTunnel.name}`, detail: text, serverId: currentTunnel.serverId, resourceId: id });
                       setError(text);
-                    }''')
+                    }'''.replace("                    ", "          "))
           replace_once("desktop/src/TunnelContext.tsx", '''          setStatuses((current) => ({ ...current, [tunnel.id]: status }));
                     syncSelected(tunnel.id, status);
-                    if (status?.state === "running"''', '''          setStatuses((current) => ({ ...current, [tunnel.id]: status }));
+                    if (status?.state === "running"'''.replace("                    ", "          "), '''          setStatuses((current) => ({ ...current, [tunnel.id]: status }));
                     syncSelected(tunnel.id, status);
                     const before = previousTunnelStates.current.get(tunnel.id);
                     if (status?.state) previousTunnelStates.current.set(tunnel.id, status.state);
                     if (status?.state === "failed" && before !== "failed") {
                       addLog({ subsystem: "tunnel", severity: "error", message: `Tunnel failed: ${tunnel.name}`, detail: status.reason ?? (status.exitCode != null ? `exit=${status.exitCode}` : null), serverId: tunnel.serverId, resourceId: tunnel.id });
                     }
-                    if (status?.state === "running"''')
+                    if (status?.state === "running"'''.replace("                    ", "          "))
 
-          # Transfer queue state transitions.
           replace_once("desktop/src/TransferContext.tsx", 'import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";', 'import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";')
           replace_once("desktop/src/TransferContext.tsx", 'import { useWorkbench } from "./WorkbenchContext";', 'import { useLogs } from "./LogContext";\nimport { useWorkbench } from "./WorkbenchContext";')
           replace_once("desktop/src/TransferContext.tsx", '''  const [transfers, setTransfers] = useState<TransferSnapshot[]>([]);
-            const { choosePanel } = useWorkbench();''', '''  const [transfers, setTransfers] = useState<TransferSnapshot[]>([]);
+            const { choosePanel } = useWorkbench();'''.replace("            ", "  "), '''  const [transfers, setTransfers] = useState<TransferSnapshot[]>([]);
             const previousStates = useRef(new Map<string, TransferSnapshot["state"]>());
             const { choosePanel } = useWorkbench();
-            const { addLog } = useLogs();''')
+            const { addLog } = useLogs();'''.replace("            ", "  "))
           replace_once("desktop/src/TransferContext.tsx", '''  const refresh = useCallback(async () => {
               const next = await invoke<TransferSnapshot[]>("sftp_transfer_list");
               setTransfers(next);
-            }, []);''', '''  const refresh = useCallback(async () => {
+            }, []);'''.replace("              ", "    "), '''  const refresh = useCallback(async () => {
               const next = await invoke<TransferSnapshot[]>("sftp_transfer_list");
               for (const item of next) {
                 const before = previousStates.current.get(item.id);
@@ -184,51 +181,57 @@ jobs:
               }
               previousStates.current = new Map(next.map((item) => [item.id, item.state]));
               setTransfers(next);
-            }, [addLog]);''')
-          replace_once("desktop/src/TransferContext.tsx", '''    setTransfers((current) => mergeOne(current, next));
+            }, [addLog]);'''.replace("              ", "    "))
+          replace_once("desktop/src/TransferContext.tsx", '''  const startUpload = useCallback(async (serverId: string, localPath: string, remoteDirectory: string) => {
+              const next = await invoke<TransferSnapshot>("sftp_start_upload", { serverId, localPath, remoteDirectory });
+              setTransfers((current) => mergeOne(current, next));
               choosePanel("transfers");
-              return next;''', '''    setTransfers((current) => mergeOne(current, next));
+              return next;
+            }, [choosePanel]);'''.replace("              ", "    "), '''  const startUpload = useCallback(async (serverId: string, localPath: string, remoteDirectory: string) => {
+              const next = await invoke<TransferSnapshot>("sftp_start_upload", { serverId, localPath, remoteDirectory });
+              setTransfers((current) => mergeOne(current, next));
               previousStates.current.set(next.id, next.state);
               addLog({ subsystem: "transfer", severity: "info", message: `Upload queued: ${next.name}`, detail: `remote=${next.remotePath}`, serverId: next.serverId, resourceId: next.id });
               choosePanel("transfers");
-              return next;''')
-          # Second identical block belongs to download; replace the remaining occurrence.
-          replace_once("desktop/src/TransferContext.tsx", '''    setTransfers((current) => mergeOne(current, next));
+              return next;
+            }, [addLog, choosePanel]);'''.replace("              ", "    "))
+          replace_once("desktop/src/TransferContext.tsx", '''  const startDownload = useCallback(async (serverId: string, remotePath: string, localPath: string) => {
+              const next = await invoke<TransferSnapshot>("sftp_start_download", { serverId, remotePath, localPath });
+              setTransfers((current) => mergeOne(current, next));
               choosePanel("transfers");
-              return next;''', '''    setTransfers((current) => mergeOne(current, next));
+              return next;
+            }, [choosePanel]);'''.replace("              ", "    "), '''  const startDownload = useCallback(async (serverId: string, remotePath: string, localPath: string) => {
+              const next = await invoke<TransferSnapshot>("sftp_start_download", { serverId, remotePath, localPath });
+              setTransfers((current) => mergeOne(current, next));
               previousStates.current.set(next.id, next.state);
               addLog({ subsystem: "transfer", severity: "info", message: `Download queued: ${next.name}`, detail: `remote=${next.remotePath}`, serverId: next.serverId, resourceId: next.id });
               choosePanel("transfers");
-              return next;''')
+              return next;
+            }, [addLog, choosePanel]);'''.replace("              ", "    "))
           replace_once("desktop/src/TransferContext.tsx", '''  const cancel = useCallback(async (transferId: string) => {
               await invoke("sftp_cancel_transfer", { transferId });
               await refresh();
-            }, [refresh]);''', '''  const cancel = useCallback(async (transferId: string) => {
+            }, [refresh]);'''.replace("              ", "    "), '''  const cancel = useCallback(async (transferId: string) => {
               await invoke("sftp_cancel_transfer", { transferId });
               addLog({ subsystem: "transfer", severity: "warn", message: "Transfer cancellation requested", resourceId: transferId });
               await refresh();
-            }, [addLog, refresh]);''')
-          replace_once("desktop/src/TransferContext.tsx", '''    setTransfers((current) => mergeOne(current, next));
+            }, [addLog, refresh]);'''.replace("              ", "    "))
+          replace_once("desktop/src/TransferContext.tsx", '''  const retry = useCallback(async (transferId: string) => {
+              const next = await invoke<TransferSnapshot>("sftp_retry_transfer", { transferId });
+              setTransfers((current) => mergeOne(current, next));
               choosePanel("transfers");
               return next;
-            }, [choosePanel]);
-
-            const clearFinished''', '''    setTransfers((current) => mergeOne(current, next));
+            }, [choosePanel]);'''.replace("              ", "    "), '''  const retry = useCallback(async (transferId: string) => {
+              const next = await invoke<TransferSnapshot>("sftp_retry_transfer", { transferId });
+              setTransfers((current) => mergeOne(current, next));
               previousStates.current.set(next.id, next.state);
               addLog({ subsystem: "transfer", severity: "info", message: `Transfer retry queued: ${next.name}`, serverId: next.serverId, resourceId: next.id });
               choosePanel("transfers");
               return next;
-            }, [addLog, choosePanel]);
+            }, [addLog, choosePanel]);'''.replace("              ", "    "))
 
-            const clearFinished''')
-          # Start callbacks now depend on addLog too.
-          text = Path("desktop/src/TransferContext.tsx").read_text()
-          text = text.replace('}, [choosePanel]);', '}, [addLog, choosePanel]);', 2)
-          Path("desktop/src/TransferContext.tsx").write_text(text)
-
-          # Emit completed SFTP diagnostics without changing the existing browser invoke contract.
           replace_once("desktop/src-tauri/src/lib.rs", '''#[tauri::command]
-            fn copy_text(text: String) -> Result<(), String> {''', '''#[tauri::command]
+            fn copy_text(text: String) -> Result<(), String> {'''.replace("            ", ""), '''#[tauri::command]
             fn sftp_diagnose(server_id: String, app: AppHandle) -> Result<sftp_diagnostics::SftpDiagnosticResult, String> {
                 let result = sftp_diagnostics::sftp_diagnose(server_id)?;
                 let _ = app.emit("sshdeck://sftp-diagnostic", result.clone());
@@ -236,7 +239,7 @@ jobs:
             }
 
             #[tauri::command]
-            fn copy_text(text: String) -> Result<(), String> {''')
+            fn copy_text(text: String) -> Result<(), String> {'''.replace("            ", ""))
           replace_once("desktop/src-tauri/src/lib.rs", '            sftp_diagnostics::sftp_diagnose,', '            sftp_diagnose,')
 
       - name: Remove one-shot workflow and commit
