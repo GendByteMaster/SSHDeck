@@ -1,0 +1,39 @@
+name: Branch Cleanup
+
+on:
+  push:
+    branches: [dev/master]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev/master
+          fetch-depth: 0
+
+      - name: Delete merged and temporary branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          for branch in feat/sftp-workspace tmp/test tmp/test2; do
+            if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
+              git push origin --delete "$branch"
+            fi
+          done
+
+      - name: Remove one-shot workflow
+        run: rm .github/workflows/branch-cleanup.yml
+
+      - name: Commit cleanup workflow removal
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/branch-cleanup.yml
+          git commit -m "chore: remove one-shot branch cleanup workflow"
+          git push origin HEAD:dev/master
