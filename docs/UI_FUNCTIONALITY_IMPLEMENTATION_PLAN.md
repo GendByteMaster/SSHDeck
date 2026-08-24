@@ -176,15 +176,15 @@ Implemented in PR #18.
 - Activity Bar routes Servers / Remote Files / Search / Ports / Sessions / History / Settings through `CommandService`;
 - Transfers Activity action and all Bottom Panel tabs use shared panel commands;
 - Inspector and Search routes to Ports/Transfers use those same commands;
-- `Ctrl+Shift+K` now reveals the primary sidebar, switches to Servers and focuses the server search after render;
+- `Ctrl+Shift+K` reveals the primary sidebar, switches to Servers and focuses the server search after render;
 - Command Palette shows ready-but-unavailable commands with their availability reason instead of silently hiding them;
 - keyboard navigation skips disabled palette commands;
 - Command Palette restores the previous focus target when closed;
 - primary-sidebar terminology is consistent with the fact that the sidebar contains more than Servers.
 
-### Phase 8 — Automated + Windows runtime release gate ⏳
+### Phase 8 — Automated + Windows runtime release gate ✅
 
-Automated release infrastructure is implemented in PR #19 and has passed on Linux and `windows-latest`. Final completion still requires the local functional Windows smoke against a real/disposable SSH server.
+Completed through PR #19 and the Windows PowerShell 5.1 compatibility hotfix in PR #20.
 
 Automated gates now cover:
 
@@ -197,7 +197,8 @@ Automated gates now cover:
 - Tauri backend check;
 - dedicated Windows desktop CI;
 - real Windows debug Tauri executable build;
-- Windows process-start smoke that fails if `sshdeck-desktop.exe` exits during the startup window.
+- Windows process-start smoke that fails if `sshdeck-desktop.exe` exits during the startup window;
+- explicit Windows PowerShell 5.1 smoke-script preflight.
 
 The Workbench contract gate protects key Phase 0–7 invariants, including:
 
@@ -222,7 +223,7 @@ The local Windows runtime gate is `scripts/windows-runtime-smoke.ps1`. It runs t
 - workspace-layout restore setting behavior;
 - structured-log secret/key redaction.
 
-The functional smoke is intentionally not faked in hosted CI: real SSH/SFTP workflows require an actual test server and credentials. Phase 8 becomes complete only after the local script reports all ten checks passed.
+The final local Windows runtime smoke passed with all 10 checks confirmed. The smoke was executed successfully after PR #20 added compatibility for Windows PowerShell 5.1 and CI regression coverage for that shell.
 
 ---
 
@@ -238,16 +239,14 @@ Completed:
 6. PR #14 — Workbench Search ✅
 7. PR #15 — versioned Settings ✅
 8. PR #18 — navigation / UX consistency ✅
-
-Current:
-
-9. PR #19 — automated Windows/runtime release gate; local functional Windows smoke remains before milestone closure ⏳
+9. PR #19 — automated Windows/runtime release gate ✅
+10. PR #20 — Windows PowerShell 5.1 smoke compatibility ✅
 
 ---
 
-## Definition of Done
+## Definition of Done ✅
 
-The milestone is complete only when:
+The milestone is complete:
 
 - every visible Activity Bar item is implemented;
 - every Bottom Panel tab contains real behavior/data;
