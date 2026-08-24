@@ -2,10 +2,14 @@ import { Button } from "@heroui/react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
+  Activity,
   ArrowDownToLine,
   ArrowUpFromLine,
   Check,
   ChevronLeft,
+  CircleCheck,
+  CircleMinus,
+  CircleX,
   File,
   Folder,
   FolderPlus,
@@ -13,7 +17,9 @@ import {
   LoaderCircle,
   Pencil,
   RefreshCw,
+  RotateCw,
   Trash2,
+  Wrench,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -32,6 +38,25 @@ type SftpEntry = {
   size: number;
   permissions: string;
   modified: string;
+};
+
+type DiagnosticStep = {
+  id: string;
+  label: string;
+  state: "passed" | "failed" | "skipped";
+  durationMs: number;
+  detail: string;
+};
+
+type SftpDiagnostic = {
+  serverId: string;
+  state: "healthy" | "failed";
+  category: string;
+  summary: string;
+  recommendation: string | null;
+  checkedAt: number;
+  durationMs: number;
+  steps: DiagnosticStep[];
 };
 
 type EditorState =
@@ -71,10 +96,72 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 }
 
+function diagnosticLabel(category: string) {
+  return category.replace(/_/g, " ");
+}
+
 function EntryIcon({ kind }: { kind: SftpEntry["kind"] }) {
   if (kind === "directory") return <Folder size={15} fill="currentColor" className="text-amber-300/80" />;
   if (kind === "symlink") return <Link size={14} className="text-sky-300/80" />;
   return <File size={14} className="text-zinc-500" />;
+}
+
+function DiagnosticStepIcon({ state }: { state: DiagnosticStep["state"] }) {
+  if (state === "passed") return <CircleCheck size={13} className="text-emerald-400" />;
+  if (state === "failed") return <CircleX size={13} className="text-rose-400" />;
+  return <CircleMinus size={13} className="text-zinc-600" />;
+}
+
+function DiagnosticsCard({ diagnostic, loading, onRun }: {
+  diagnostic: SftpDiagnostic | null;
+  loading: boolean;
+  onRun: () => void;
+}) {
+  if (!diagnostic && !loading) return null;
+
+  if (!diagnostic) {
+    return <section className="border-b border-sky-400/10 bg-sky-400/[0.035] px-3 py-3">
+      <div className="flex items-center gap-2 text-[10.5px] font-medium text-sky-200/80">
+        <LoaderCircle size={13} className="animate-spin" /> Running SFTP diagnostics…
+      </div>
+      <p className="mt-1.5 text-[9.5px] leading-4 text-zinc-600">Checking the connection path, SSH authentication, and the SFTP subsystem.</p>
+    </section>;
+  }
+
+  const healthy = diagnostic.state === "healthy";
+  return <section className={`border-b px-3 py-3 ${healthy ? "border-emerald-400/10 bg-emerald-400/[0.025]" : "border-amber-400/10 bg-amber-400/[0.025]"}`}>
+    <div className="flex items-start gap-2.5">
+      <span className={`mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg border ${healthy ? "border-emerald-400/15 bg-emerald-400/[0.06] text-emerald-300" : "border-amber-400/15 bg-amber-400/[0.06] text-amber-300"}`}>
+        {healthy ? <CircleCheck size={14} /> : <Wrench size={14} />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <strong className="truncate text-[10.5px] font-semibold text-zinc-300">{diagnostic.summary}</strong>
+          <span className="shrink-0 rounded-md border border-white/[0.055] bg-black/10 px-1.5 py-0.5 text-[8.5px] uppercase tracking-[0.08em] text-zinc-600">{diagnosticLabel(diagnostic.category)}</span>
+        </div>
+        <small className="mt-0.5 block text-[9px] text-zinc-700">Completed in {diagnostic.durationMs} ms</small>
+      </div>
+      <button type="button" onClick={onRun} disabled={loading} title="Run diagnostics again" className="grid size-7 shrink-0 place-items-center rounded-lg text-zinc-600 transition-colors hover:bg-white/[0.04] hover:text-zinc-300 disabled:opacity-40">
+        {loading ? <LoaderCircle size={12} className="animate-spin" /> : <RotateCw size={12} />}
+      </button>
+    </div>
+
+    <div className="mt-2.5 grid gap-1">
+      {diagnostic.steps.map((step) => <div key={step.id} className="rounded-lg border border-white/[0.045] bg-black/10 px-2.5 py-2">
+        <div className="flex items-center gap-2">
+          <DiagnosticStepIcon state={step.state} />
+          <strong className="min-w-0 flex-1 truncate text-[9.5px] font-medium text-zinc-400">{step.label}</strong>
+          {step.durationMs > 0 && <span className="font-mono text-[8.5px] text-zinc-700">{step.durationMs} ms</span>}
+        </div>
+        <p className="mt-1 break-words text-[9px] leading-4 text-zinc-650 text-zinc-600">{step.detail}</p>
+      </div>)}
+    </div>
+
+    {diagnostic.recommendation && <div className="mt-2.5 rounded-lg border border-[#6f91ff]/10 bg-[#4f7cff]/[0.035] px-2.5 py-2">
+      <div className="mb-1 flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.09em] text-[#829dff]/70"><Activity size={10} /> Recommended action</div>
+      <p className="text-[9.5px] leading-4 text-zinc-500">{diagnostic.recommendation}</p>
+    </div>}
+  </section>;
 }
 
 export function SftpBrowser({ servers, selectedServerId, onSelectServer }: Props) {
@@ -85,6 +172,8 @@ export function SftpBrowser({ servers, selectedServerId, onSelectServer }: Props
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorState>(null);
+  const [diagnostic, setDiagnostic] = useState<SftpDiagnostic | null>(null);
+  const [diagnosing, setDiagnosing] = useState(false);
   const { startDownload, startUpload } = useTransfers();
 
   const server = useMemo(() => servers.find((value) => value.id === serverId) ?? null, [serverId, servers]);
@@ -96,6 +185,28 @@ export function SftpBrowser({ servers, selectedServerId, onSelectServer }: Props
     }
     if (!servers.some((value) => value.id === serverId)) setServerId(servers[0]?.id ?? "");
   }, [selectedServerId, serverId, servers]);
+
+  async function runDiagnostics() {
+    if (!serverId || diagnosing) return;
+    setDiagnosing(true);
+    try {
+      const result = await invoke<SftpDiagnostic>("sftp_diagnose", { serverId });
+      setDiagnostic(result);
+    } catch (value) {
+      setDiagnostic({
+        serverId,
+        state: "failed",
+        category: "diagnostics",
+        summary: "Could not run SFTP diagnostics",
+        recommendation: "Restart SSHDeck and verify that the system OpenSSH client is available.",
+        checkedAt: Math.floor(Date.now() / 1000),
+        durationMs: 0,
+        steps: [{ id: "diagnostics", label: "Diagnostics runner", state: "failed", durationMs: 0, detail: String(value) }],
+      });
+    } finally {
+      setDiagnosing(false);
+    }
+  }
 
   async function load(target = path) {
     if (!serverId) {
@@ -110,7 +221,9 @@ export function SftpBrowser({ servers, selectedServerId, onSelectServer }: Props
       setPath(target);
       setPathDraft(target);
     } catch (value) {
+      setEntries([]);
       setError(String(value));
+      if (!diagnostic && !diagnosing) void runDiagnostics();
     } finally {
       setLoading(false);
     }
@@ -120,12 +233,14 @@ export function SftpBrowser({ servers, selectedServerId, onSelectServer }: Props
     if (!serverId) return;
     setPath(".");
     setPathDraft(".");
+    setDiagnostic(null);
     void load(".");
     // load is intentionally keyed by the selected server only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverId]);
 
   function selectServer(nextId: string) {
+    setDiagnostic(null);
     setServerId(nextId);
     onSelectServer(nextId);
   }
@@ -212,6 +327,7 @@ export function SftpBrowser({ servers, selectedServerId, onSelectServer }: Props
         >
           {servers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
+        <Button isIconOnly aria-label="Run SFTP diagnostics" onPress={() => void runDiagnostics()} className="size-8 min-w-8 rounded-lg border border-white/[0.065] bg-white/[0.025] text-zinc-400">{diagnosing ? <LoaderCircle size={14} className="animate-spin" /> : <Activity size={14} />}</Button>
         <Button isIconOnly aria-label="Upload file" onPress={() => void uploadFile()} className="size-8 min-w-8 rounded-lg border border-white/[0.065] bg-white/[0.025] text-zinc-400"><ArrowUpFromLine size={14} /></Button>
       </div>
       <form className="mt-2 flex gap-1.5" onSubmit={(event) => { event.preventDefault(); void load(pathDraft.trim() || "."); }}>
@@ -234,7 +350,15 @@ export function SftpBrowser({ servers, selectedServerId, onSelectServer }: Props
       </form>
     </div>}
 
-    {error && <div className="border-b border-rose-400/10 bg-rose-400/[0.05] px-3 py-2 text-[10.5px] leading-5 text-rose-300/80">{error}</div>}
+    {error && <div className="border-b border-rose-400/10 bg-rose-400/[0.05] px-3 py-2.5">
+      <div className="flex items-start gap-2">
+        <CircleX size={13} className="mt-0.5 shrink-0 text-rose-400/80" />
+        <div className="min-w-0 flex-1"><strong className="block text-[10px] font-semibold text-rose-300/90">SFTP request failed</strong><p className="mt-0.5 break-words text-[9.5px] leading-4 text-rose-300/65">{error}</p></div>
+        <button type="button" onClick={() => void runDiagnostics()} disabled={diagnosing} className="shrink-0 rounded-md border border-rose-400/10 bg-rose-400/[0.04] px-2 py-1 text-[9px] font-medium text-rose-200/70 hover:bg-rose-400/[0.08] disabled:opacity-40">Diagnose</button>
+      </div>
+    </div>}
+
+    <DiagnosticsCard diagnostic={diagnostic} loading={diagnosing} onRun={() => void runDiagnostics()} />
 
     <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 [scrollbar-color:rgba(255,255,255,.11)_transparent] [scrollbar-width:thin]">
       {!loading && entries.length === 0 && !error && <div className="px-3 py-8 text-center text-[11px] text-zinc-700">Directory is empty.</div>}
