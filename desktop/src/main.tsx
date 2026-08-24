@@ -4,6 +4,7 @@ import "./design-system.css";
 import "./styles.css";
 import "./sessionLifecycle.css";
 import "./apple.css";
+import "./design-components.css";
 import "./performance.css";
 import "./keyboard.css";
 import { App } from "./App";
