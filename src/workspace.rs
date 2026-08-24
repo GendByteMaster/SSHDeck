@@ -35,6 +35,40 @@ pub enum TunnelKind {
     Dynamic,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionHistoryRecord {
+    pub id: String,
+    pub server_id: String,
+    pub server_name: String,
+    pub state: String,
+    pub at_ms: u64,
+    pub duration_ms: u64,
+    pub exit_code: Option<i32>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkbenchLayout {
+    pub primary_visible: bool,
+    pub secondary_visible: bool,
+    pub panel_visible: bool,
+    pub panel_tab: String,
+    pub primary_width: u16,
+}
+
+impl Default for WorkbenchLayout {
+    fn default() -> Self {
+        Self {
+            primary_visible: true,
+            secondary_visible: true,
+            panel_visible: false,
+            panel_tab: "terminal".to_owned(),
+            primary_width: 320,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceData {
@@ -42,6 +76,10 @@ pub struct WorkspaceData {
     pub quick_commands: Vec<QuickCommand>,
     #[serde(default)]
     pub tunnels: Vec<TunnelRecord>,
+    #[serde(default)]
+    pub session_history: Vec<SessionHistoryRecord>,
+    #[serde(default)]
+    pub layout: WorkbenchLayout,
 }
 
 pub struct WorkspaceStore {
