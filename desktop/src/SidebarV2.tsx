@@ -1,4 +1,5 @@
 import { Copy, Download, FolderClock, History, Pencil, Plus, Search, Server, Settings, Star, TerminalSquare, Trash2, Waypoints } from "lucide-react";
+import { useRef, useState } from "react";
 import { ServerStatus } from "./serverStatus";
 
 export type SidebarServer = {
@@ -29,6 +30,9 @@ type Props = {
   onEdit: (server: SidebarServer) => void;
   onDelete: (server: SidebarServer) => void;
 };
+
+const WIDTH_KEY = "sshdeck.workbench.primaryWidth";
+const clamp = (value: number) => Math.min(520, Math.max(230, value));
 
 function ServerItem({ server, status, checking, onConnect, onFavorite, onExport, onEdit, onDelete }: {
   server: SidebarServer;
@@ -61,7 +65,28 @@ function ServerItem({ server, status, checking, onConnect, onFavorite, onExport,
 
 export function SidebarV2({ favorites, groups, query, statuses, checking, onQueryChange, onAdd, onImport, onConnect, onFavorite, onExport, onEdit, onDelete }: Props) {
   const count = favorites.length + groups.reduce((sum, [, items]) => sum + items.length, 0);
-  return <aside className="sidebar v2-sidebar workbench-primary">
+  const [width, setWidth] = useState(() => clamp(Number(localStorage.getItem(WIDTH_KEY)) || 306));
+  const dragStart = useRef<{ x: number; width: number } | null>(null);
+
+  function beginResize(event: React.PointerEvent<HTMLDivElement>) {
+    dragStart.current = { x: event.clientX, width };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function resize(event: React.PointerEvent<HTMLDivElement>) {
+    if (!dragStart.current) return;
+    const next = clamp(dragStart.current.width + event.clientX - dragStart.current.x);
+    setWidth(next);
+  }
+
+  function endResize(event: React.PointerEvent<HTMLDivElement>) {
+    if (!dragStart.current) return;
+    dragStart.current = null;
+    localStorage.setItem(WIDTH_KEY, String(width));
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  return <aside className="sidebar v2-sidebar workbench-primary" style={{ width }}>
     <nav className="activity-bar" aria-label="Workbench navigation">
       <div className="activity-brand">S</div>
       <button className="activity-item active" title="Servers"><Server size={19} /></button>
@@ -90,5 +115,6 @@ export function SidebarV2({ favorites, groups, query, statuses, checking, onQuer
         {count === 0 && <div className="v2-sidebar-empty"><Server size={18} /><strong>No servers</strong><span>Add a server or import your OpenSSH config.</span></div>}
       </div>
     </div>
+    <div className="workbench-resizer primary-resizer" onPointerDown={beginResize} onPointerMove={resize} onPointerUp={endResize} />
   </aside>;
 }
