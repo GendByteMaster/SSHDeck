@@ -15,7 +15,8 @@ import {
   Waypoints,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { useCommandContextMenu } from "./commands/ContextMenuService";
 import { ServerStatus } from "./serverStatus";
 import { useWorkbench } from "./WorkbenchContext";
 
@@ -74,14 +75,34 @@ function IconAction({ label, children, onClick, danger = false }: { label: strin
   return <button type="button" aria-label={label} title={label} onClick={onClick} className={`grid size-7 place-items-center rounded-lg border border-transparent transition-colors ${danger ? "text-zinc-500 hover:border-rose-400/15 hover:bg-rose-400/10 hover:text-rose-300" : "text-zinc-500 hover:border-white/[0.06] hover:bg-white/[0.05] hover:text-zinc-200"}`}>{children}</button>;
 }
 
-function ServerItem({ server, status, checking, onConnect, onFavorite, onExport, onEdit, onDelete }: { server: SidebarServer; status?: ServerStatus; checking: boolean; onConnect: () => void; onFavorite: () => void; onExport: () => void; onEdit: () => void; onDelete: () => void }) {
+function ServerItem({ server, status, checking, selected, onSelect, onContextMenu, onConnect, onFavorite, onExport, onEdit, onDelete }: {
+  server: SidebarServer;
+  status?: ServerStatus;
+  checking: boolean;
+  selected: boolean;
+  onSelect: () => void;
+  onContextMenu: (event: React.MouseEvent<HTMLDivElement>) => void;
+  onConnect: () => void;
+  onFavorite: () => void;
+  onExport: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   const state = checking ? "checking" : status?.state ?? "unknown";
-  return <motion.div layout="position" initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16 }} className="group relative mb-1 flex min-h-14 items-center rounded-xl border border-transparent hover:border-white/[0.055] hover:bg-white/[0.035]">
+  return <motion.div
+    layout="position"
+    initial={{ opacity: 0, y: 3 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.16 }}
+    onPointerDown={onSelect}
+    onContextMenu={onContextMenu}
+    className={`group relative mb-1 flex min-h-14 items-center rounded-xl border transition-colors ${selected ? "border-[#6f91ff]/20 bg-[#4f7cff]/10" : "border-transparent hover:border-white/[0.055] hover:bg-white/[0.035]"}`}
+  >
     <button type="button" onClick={onConnect} className="server-connect flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-[#5f86ff]/60">
       <span className={`size-2 shrink-0 rounded-full ${statusClass(state)}`} />
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-white/[0.055] bg-white/[0.025] text-zinc-500"><Server size={15} strokeWidth={1.8} /></span>
+      <span className={`grid size-8 shrink-0 place-items-center rounded-lg border ${selected ? "border-[#6f91ff]/15 bg-[#4f7cff]/10 text-[#8fa8ff]" : "border-white/[0.055] bg-white/[0.025] text-zinc-500"}`}><Server size={15} strokeWidth={1.8} /></span>
       <span className="min-w-0 flex-1">
-        <strong className="block truncate text-[13px] font-medium leading-5 text-zinc-200">{server.name}</strong>
+        <strong className={`block truncate text-[13px] font-medium leading-5 ${selected ? "text-zinc-100" : "text-zinc-200"}`}>{server.name}</strong>
         <small className="mt-0.5 block truncate text-[11px] leading-4 text-zinc-600">{server.user ? `${server.user}@` : ""}{server.host}:{server.port}{status?.latencyMs != null ? ` · ${status.latencyMs} ms` : ""}</small>
       </span>
     </button>
@@ -98,11 +119,29 @@ export function SidebarV2({ favorites, groups, query, statuses, checking, onQuer
   const count = favorites.length + groups.reduce((sum, [, items]) => sum + items.length, 0);
   const dragStart = useRef<{ x: number; width: number } | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
-  const { registerAppActions, primaryWidth, setPrimaryWidth } = useWorkbench();
+  const { registerAppActions, primaryWidth, setPrimaryWidth, selectedServer, setSelectedServer } = useWorkbench();
+  const popupCommands = useCommandContextMenu();
+  const allServers = useMemo(() => [...favorites, ...groups.flatMap(([, items]) => items)], [favorites, groups]);
 
   useEffect(() => {
     registerAppActions({ addServer: onAdd, importOpenSsh: onImport, focusServerSearch: () => { searchRef.current?.focus(); searchRef.current?.select(); } });
   }, [onAdd, onImport, registerAppActions]);
+
+  useEffect(() => {
+    if (selectedServer.id && !allServers.some((server) => server.id === selectedServer.id)) {
+      setSelectedServer({ id: null, name: "No server selected" });
+    }
+  }, [allServers, selectedServer.id, setSelectedServer]);
+
+  function selectServer(server: SidebarServer) {
+    setSelectedServer({ id: server.id, name: server.name });
+  }
+
+  function showServerContextMenu(server: SidebarServer, event: React.MouseEvent<HTMLDivElement>) {
+    event.preventDefault();
+    selectServer(server);
+    void popupCommands(["server.connect", "server.edit", "server.exportOpenSsh", "server.delete"]);
+  }
 
   function beginResize(event: React.PointerEvent<HTMLDivElement>) {
     dragStart.current = { x: event.clientX, width: primaryWidth };
@@ -118,6 +157,23 @@ export function SidebarV2({ favorites, groups, query, statuses, checking, onQuer
     if (!dragStart.current) return;
     dragStart.current = null;
     event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  function renderServer(server: SidebarServer) {
+    return <ServerItem
+      key={server.id}
+      server={server}
+      status={statuses[server.id]}
+      checking={checking.has(server.id)}
+      selected={selectedServer.id === server.id}
+      onSelect={() => selectServer(server)}
+      onContextMenu={(event) => showServerContextMenu(server, event)}
+      onConnect={() => onConnect(server)}
+      onFavorite={() => onFavorite(server)}
+      onExport={() => onExport(server)}
+      onEdit={() => onEdit(server)}
+      onDelete={() => onDelete(server)}
+    />;
   }
 
   return <aside className="workbench-primary relative grid h-full shrink-0 grid-cols-[52px_minmax(0,1fr)] overflow-visible border-r border-white/[0.055] bg-[#0a0c10]/95 text-zinc-200" style={{ width: primaryWidth }}>
@@ -136,8 +192,8 @@ export function SidebarV2({ favorites, groups, query, statuses, checking, onQuer
         <label className="mt-2.5 flex h-9 items-center gap-2 rounded-xl border border-white/[0.065] bg-[#090b0f] px-3 text-zinc-600 transition-colors focus-within:border-[#5f86ff]/45 focus-within:text-zinc-400"><Search size={14} strokeWidth={1.8} /><input ref={searchRef} value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search servers" className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[12px] text-zinc-300 outline-none placeholder:text-zinc-700" /></label>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-4 [scrollbar-color:rgba(255,255,255,.11)_transparent] [scrollbar-width:thin]">
-        {favorites.length > 0 && <section className="mb-4"><div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-700">Favorites</div>{favorites.map((server) => <ServerItem key={server.id} server={server} status={statuses[server.id]} checking={checking.has(server.id)} onConnect={() => onConnect(server)} onFavorite={() => onFavorite(server)} onExport={() => onExport(server)} onEdit={() => onEdit(server)} onDelete={() => onDelete(server)} />)}</section>}
-        {groups.map(([group, items]) => <section key={group} className="mb-4"><div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-700">{group}</div>{items.map((server) => <ServerItem key={server.id} server={server} status={statuses[server.id]} checking={checking.has(server.id)} onConnect={() => onConnect(server)} onFavorite={() => onFavorite(server)} onExport={() => onExport(server)} onEdit={() => onEdit(server)} onDelete={() => onDelete(server)} />)}</section>)}
+        {favorites.length > 0 && <section className="mb-4"><div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-700">Favorites</div>{favorites.map(renderServer)}</section>}
+        {groups.map(([group, items]) => <section key={group} className="mb-4"><div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-700">{group}</div>{items.map(renderServer)}</section>)}
         {count === 0 && <div className="mx-2 mt-6 flex flex-col items-center rounded-2xl border border-dashed border-white/[0.07] px-4 py-7 text-center"><div className="grid size-9 place-items-center rounded-xl bg-white/[0.035] text-zinc-600"><Server size={16} /></div><strong className="mt-3 text-[12px] font-medium text-zinc-400">No servers</strong><span className="mt-1 max-w-44 text-[11px] leading-5 text-zinc-700">Add a server or import your OpenSSH config.</span></div>}
       </div>
     </div>
