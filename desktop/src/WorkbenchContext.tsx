@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 export type PanelTab = "terminal" | "ports" | "logs" | "transfers";
 
@@ -8,6 +8,11 @@ export type SessionSnapshot = {
   name: string;
   state: string;
   latency: string | null;
+};
+
+export type ServerSelection = {
+  id: string | null;
+  name: string;
 };
 
 type NativeLayout = {
@@ -27,6 +32,7 @@ type WorkbenchState = {
   panelTab: PanelTab;
   primaryWidth: number;
   session: SessionSnapshot;
+  selectedServer: ServerSelection;
 };
 
 type WorkbenchActions = {
@@ -36,6 +42,7 @@ type WorkbenchActions = {
   setPrimaryWidth: (width: number) => void;
   choosePanel: (tab: PanelTab) => void;
   setSessionSnapshot: (snapshot: SessionSnapshot) => void;
+  setSelectedServer: (selection: ServerSelection) => void;
   requestAddServer: () => void;
   requestImportOpenSsh: () => void;
   requestFocusServerSearch: () => void;
@@ -44,6 +51,10 @@ type WorkbenchActions = {
   requestPreviousSession: () => void;
   requestCloseSession: () => void;
   requestReconnectSession: () => void;
+  requestConnectSelectedServer: () => void;
+  requestEditSelectedServer: () => void;
+  requestExportSelectedServer: () => void;
+  requestDeleteSelectedServer: () => void;
   registerAppActions: (actions: AppActions) => void;
 };
 
@@ -56,6 +67,10 @@ export type AppActions = {
   previousSession?: () => void;
   closeSession?: () => void;
   reconnectSession?: () => void;
+  connectServer?: (serverId: string) => void;
+  editServer?: (serverId: string) => void;
+  exportServer?: (serverId: string) => void;
+  deleteServer?: (serverId: string) => void;
 };
 
 type WorkbenchContextValue = WorkbenchState & WorkbenchActions;
@@ -67,6 +82,7 @@ const defaults: WorkbenchState = {
   panelTab: "terminal",
   primaryWidth: 320,
   session: { id: null, name: "No active session", state: "idle", latency: null },
+  selectedServer: { id: null, name: "No server selected" },
 };
 
 const WorkbenchContext = createContext<WorkbenchContextValue | null>(null);
@@ -86,7 +102,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [panelTab, setPanelTab] = useState<PanelTab>(defaults.panelTab);
   const [primaryWidth, setPrimaryWidthState] = useState(defaults.primaryWidth);
   const [session, setSessionSnapshot] = useState<SessionSnapshot>(defaults.session);
-  const [appActions, setAppActions] = useState<AppActions>({});
+  const [selectedServer, setSelectedServer] = useState<ServerSelection>(defaults.selectedServer);
+  const appActions = useRef<AppActions>({});
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -118,7 +135,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   }, [hydrated, panelTab, panelVisible, primaryVisible, primaryWidth, secondaryVisible]);
 
   const registerAppActions = useCallback((actions: AppActions) => {
-    setAppActions((current) => ({ ...current, ...actions }));
+    appActions.current = { ...appActions.current, ...actions };
   }, []);
   const choosePanel = useCallback((tab: PanelTab) => {
     setPanelTab(tab);
@@ -128,6 +145,27 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     setPrimaryWidthState(clampPrimaryWidth(width));
   }, []);
 
+  const requestAddServer = useCallback(() => appActions.current.addServer?.(), []);
+  const requestImportOpenSsh = useCallback(() => appActions.current.importOpenSsh?.(), []);
+  const requestFocusServerSearch = useCallback(() => appActions.current.focusServerSearch?.(), []);
+  const requestSelectSession = useCallback((index: number) => appActions.current.selectSession?.(index), []);
+  const requestNextSession = useCallback(() => appActions.current.nextSession?.(), []);
+  const requestPreviousSession = useCallback(() => appActions.current.previousSession?.(), []);
+  const requestCloseSession = useCallback(() => appActions.current.closeSession?.(), []);
+  const requestReconnectSession = useCallback(() => appActions.current.reconnectSession?.(), []);
+  const requestConnectSelectedServer = useCallback(() => {
+    if (selectedServer.id) appActions.current.connectServer?.(selectedServer.id);
+  }, [selectedServer.id]);
+  const requestEditSelectedServer = useCallback(() => {
+    if (selectedServer.id) appActions.current.editServer?.(selectedServer.id);
+  }, [selectedServer.id]);
+  const requestExportSelectedServer = useCallback(() => {
+    if (selectedServer.id) appActions.current.exportServer?.(selectedServer.id);
+  }, [selectedServer.id]);
+  const requestDeleteSelectedServer = useCallback(() => {
+    if (selectedServer.id) appActions.current.deleteServer?.(selectedServer.id);
+  }, [selectedServer.id]);
+
   const value = useMemo<WorkbenchContextValue>(() => ({
     primaryVisible,
     secondaryVisible,
@@ -135,22 +173,51 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     panelTab,
     primaryWidth,
     session,
+    selectedServer,
     setPrimaryVisible,
     setSecondaryVisible,
     setPanelVisible,
     setPrimaryWidth,
     choosePanel,
     setSessionSnapshot,
+    setSelectedServer,
     registerAppActions,
-    requestAddServer: () => appActions.addServer?.(),
-    requestImportOpenSsh: () => appActions.importOpenSsh?.(),
-    requestFocusServerSearch: () => appActions.focusServerSearch?.(),
-    requestSelectSession: (index) => appActions.selectSession?.(index),
-    requestNextSession: () => appActions.nextSession?.(),
-    requestPreviousSession: () => appActions.previousSession?.(),
-    requestCloseSession: () => appActions.closeSession?.(),
-    requestReconnectSession: () => appActions.reconnectSession?.(),
-  }), [appActions, choosePanel, panelTab, panelVisible, primaryVisible, primaryWidth, registerAppActions, secondaryVisible, session, setPrimaryWidth]);
+    requestAddServer,
+    requestImportOpenSsh,
+    requestFocusServerSearch,
+    requestSelectSession,
+    requestNextSession,
+    requestPreviousSession,
+    requestCloseSession,
+    requestReconnectSession,
+    requestConnectSelectedServer,
+    requestEditSelectedServer,
+    requestExportSelectedServer,
+    requestDeleteSelectedServer,
+  }), [
+    choosePanel,
+    panelTab,
+    panelVisible,
+    primaryVisible,
+    primaryWidth,
+    registerAppActions,
+    requestAddServer,
+    requestCloseSession,
+    requestConnectSelectedServer,
+    requestDeleteSelectedServer,
+    requestEditSelectedServer,
+    requestExportSelectedServer,
+    requestFocusServerSearch,
+    requestImportOpenSsh,
+    requestNextSession,
+    requestPreviousSession,
+    requestReconnectSession,
+    requestSelectSession,
+    secondaryVisible,
+    selectedServer,
+    session,
+    setPrimaryWidth,
+  ]);
 
   const rootClassName = [
     "h-full w-full",
