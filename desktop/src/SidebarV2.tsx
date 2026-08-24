@@ -15,8 +15,9 @@ import {
   Waypoints,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ServerStatus } from "./serverStatus";
+import { useWorkbench } from "./WorkbenchContext";
 
 export type SidebarServer = {
   id: string;
@@ -47,7 +48,6 @@ type Props = {
   onDelete: (server: SidebarServer) => void;
 };
 
-const WIDTH_KEY = "sshdeck.workbench.primaryWidth";
 const clamp = (value: number) => Math.min(520, Math.max(280, value));
 
 const activityItems = [
@@ -121,7 +121,7 @@ function ServerItem({ server, status, checking, onConnect, onFavorite, onExport,
       <button
         type="button"
         onClick={onConnect}
-        className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-[#5f86ff]/60"
+        className="server-connect flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-[#5f86ff]/60"
       >
         <span className={`size-2 shrink-0 rounded-full ${statusClass(state)}`} />
         <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-white/[0.055] bg-white/[0.025] text-zinc-500">
@@ -150,8 +150,21 @@ function ServerItem({ server, status, checking, onConnect, onFavorite, onExport,
 
 export function SidebarV2({ favorites, groups, query, statuses, checking, onQueryChange, onAdd, onImport, onConnect, onFavorite, onExport, onEdit, onDelete }: Props) {
   const count = favorites.length + groups.reduce((sum, [, items]) => sum + items.length, 0);
-  const [width, setWidth] = useState(() => clamp(Number(localStorage.getItem(WIDTH_KEY)) || 320));
+  const [width, setWidth] = useState(320);
   const dragStart = useRef<{ x: number; width: number } | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const { registerAppActions } = useWorkbench();
+
+  useEffect(() => {
+    registerAppActions({
+      addServer: onAdd,
+      importOpenSsh: onImport,
+      focusServerSearch: () => {
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      },
+    });
+  }, [onAdd, onImport, registerAppActions]);
 
   function beginResize(event: React.PointerEvent<HTMLDivElement>) {
     dragStart.current = { x: event.clientX, width };
@@ -167,7 +180,6 @@ export function SidebarV2({ favorites, groups, query, statuses, checking, onQuer
   function endResize(event: React.PointerEvent<HTMLDivElement>) {
     if (!dragStart.current) return;
     dragStart.current = null;
-    localStorage.setItem(WIDTH_KEY, String(width));
     event.currentTarget.releasePointerCapture(event.pointerId);
   }
 
@@ -235,6 +247,7 @@ export function SidebarV2({ favorites, groups, query, statuses, checking, onQuer
           <label className="mt-2.5 flex h-9 items-center gap-2 rounded-xl border border-white/[0.065] bg-[#090b0f] px-3 text-zinc-600 transition-colors focus-within:border-[#5f86ff]/45 focus-within:text-zinc-400">
             <Search size={14} strokeWidth={1.8} />
             <input
+              ref={searchRef}
               value={query}
               onChange={(event) => onQueryChange(event.target.value)}
               placeholder="Search servers"
