@@ -1,0 +1,121 @@
+name: Prerelease
+
+on:
+  push:
+    branches:
+      - "release/v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag, for example v0.1.0_beta"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  windows-prerelease:
+    name: Build and publish Windows prerelease
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve release tag
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $tag = "${{ inputs.version }}"
+          }
+          else {
+            $refName = "${{ github.ref_name }}"
+            if (-not $refName.StartsWith("release/")) {
+              throw "Expected a release/* branch, got $refName"
+            }
+            $tag = $refName.Substring("release/".Length)
+          }
+
+          if (-not $tag.StartsWith("v")) {
+            throw "Release tag must start with v: $tag"
+          }
+
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Publishing prerelease $tag"
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install frontend dependencies
+        working-directory: desktop
+        run: npm install
+
+      - name: Check UI contracts
+        working-directory: desktop
+        run: npm run test:ui-contracts
+
+      - name: Build frontend
+        working-directory: desktop
+        run: npm run build
+
+      - name: Test Tauri backend
+        working-directory: desktop/src-tauri
+        run: cargo test
+
+      - name: Check Tauri backend
+        working-directory: desktop/src-tauri
+        run: cargo check
+
+      - name: Build Windows release binary
+        working-directory: desktop
+        run: npm run tauri -- build --no-bundle
+
+      - name: Prepare portable Windows asset
+        shell: pwsh
+        run: |
+          $source = "desktop/src-tauri/target/release/sshdeck-desktop.exe"
+          if (-not (Test-Path $source)) {
+            throw "Release executable was not produced at $source"
+          }
+
+          $asset = "SSHDeck-$env:RELEASE_TAG-windows-x64.exe"
+          Copy-Item $source $asset -Force
+          "RELEASE_ASSET=$asset" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Publish GitHub prerelease
+        shell: pwsh
+        run: |
+          $notesPath = "docs/releases/$env:RELEASE_TAG.md"
+
+          gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $env:RELEASE_TAG already exists; replacing the Windows asset."
+            gh release upload $env:RELEASE_TAG $env:RELEASE_ASSET --clobber --repo $env:GITHUB_REPOSITORY
+            exit $LASTEXITCODE
+          }
+
+          $args = @(
+            "release", "create", $env:RELEASE_TAG, $env:RELEASE_ASSET,
+            "--repo", $env:GITHUB_REPOSITORY,
+            "--target", $env:GITHUB_SHA,
+            "--title", "SSHDeck $env:RELEASE_TAG",
+            "--prerelease"
+          )
+
+          if (Test-Path $notesPath) {
+            $args += @("--notes-file", $notesPath)
+          }
+          else {
+            $args += "--generate-notes"
+          }
+
+          gh @args
