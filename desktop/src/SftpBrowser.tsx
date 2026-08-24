@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useTransfers } from "./TransferContext";
 
 export type SftpServer = {
   id: string;
@@ -31,14 +32,6 @@ type SftpEntry = {
   size: number;
   permissions: string;
   modified: string;
-};
-
-type Transfer = {
-  id: string;
-  name: string;
-  direction: "upload" | "download";
-  state: "running" | "done" | "failed";
-  detail: string;
 };
 
 type EditorState =
@@ -92,7 +85,7 @@ export function SftpBrowser({ servers, selectedServerId, onSelectServer }: Props
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorState>(null);
-  const [transfers, setTransfers] = useState<Transfer[]>([]);
+  const { startDownload, startUpload } = useTransfers();
 
   const server = useMemo(() => servers.find((value) => value.id === serverId) ?? null, [serverId, servers]);
 
@@ -178,29 +171,13 @@ export function SftpBrowser({ servers, selectedServerId, onSelectServer }: Props
     }
   }
 
-  function startTransfer(name: string, direction: Transfer["direction"], detail: string) {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const transfer: Transfer = { id, name, direction, state: "running", detail };
-    setTransfers((current) => [transfer, ...current].slice(0, 6));
-    return id;
-  }
-
-  function finishTransfer(id: string, state: "done" | "failed", detail: string) {
-    setTransfers((current) => current.map((item) => item.id === id ? { ...item, state, detail } : item));
-  }
-
   async function uploadFile() {
     if (!serverId) return;
     const selected = await open({ multiple: false, directory: false });
     if (!selected || Array.isArray(selected)) return;
-    const name = selected.replace(/\\/g, "/").split("/").pop() || selected;
-    const transferId = startTransfer(name, "upload", `→ ${path}`);
     try {
-      await invoke("sftp_upload", { serverId, localPath: selected, remoteDirectory: path });
-      finishTransfer(transferId, "done", `Uploaded to ${path}`);
-      await load();
+      await startUpload(serverId, selected, path);
     } catch (value) {
-      finishTransfer(transferId, "failed", String(value));
       setError(String(value));
     }
   }
@@ -209,12 +186,9 @@ export function SftpBrowser({ servers, selectedServerId, onSelectServer }: Props
     if (!serverId || entry.kind === "directory") return;
     const destination = await save({ defaultPath: entry.name });
     if (!destination) return;
-    const transferId = startTransfer(entry.name, "download", `← ${entry.path}`);
     try {
-      await invoke("sftp_download", { serverId, remotePath: entry.path, localPath: destination });
-      finishTransfer(transferId, "done", `Saved to ${destination}`);
+      await startDownload(serverId, entry.path, destination);
     } catch (value) {
-      finishTransfer(transferId, "failed", String(value));
       setError(String(value));
     }
   }
@@ -286,12 +260,5 @@ export function SftpBrowser({ servers, selectedServerId, onSelectServer }: Props
       </div>)}
     </div>
 
-    {transfers.length > 0 && <section className="max-h-36 shrink-0 overflow-y-auto border-t border-white/[0.055] bg-[#090b0f]/70 px-2.5 py-2">
-      <div className="mb-1.5 text-[9.5px] font-semibold uppercase tracking-[0.12em] text-zinc-700">Recent transfers</div>
-      {transfers.map((transfer) => <div key={transfer.id} className="flex items-start gap-2 rounded-lg px-1.5 py-1.5">
-        <span className="mt-0.5 text-zinc-600">{transfer.state === "running" ? <LoaderCircle size={12} className="animate-spin" /> : transfer.state === "done" ? <Check size={12} className="text-emerald-400" /> : <X size={12} className="text-rose-400" />}</span>
-        <span className="min-w-0 flex-1"><strong className="block truncate text-[10.5px] font-medium text-zinc-400">{transfer.direction === "upload" ? "↑" : "↓"} {transfer.name}</strong><small className={`mt-0.5 block truncate text-[9.5px] ${transfer.state === "failed" ? "text-rose-400/70" : "text-zinc-700"}`}>{transfer.detail}</small></span>
-      </div>)}
-    </section>}
   </div>;
 }
