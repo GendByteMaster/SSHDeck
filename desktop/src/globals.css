@@ -26,3 +26,95 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: geometricPrecision;
 }
+
+/* Tailwind-owned workbench shell. Keep semantic class names because the
+   keyboard/chrome bridge uses them as stable DOM hooks. */
+@layer components {
+  .workspace {
+    @apply relative grid min-w-0 overflow-hidden bg-[#090b0f];
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .workspace:not(:has(.tab)) {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .workspace:not(:has(.tab)) > .topbar {
+    @apply hidden;
+  }
+
+  .topbar {
+    @apply flex min-h-12 items-end overflow-hidden border-b border-white/[0.07] bg-[#0d1015]/95 px-2 pt-1 backdrop-blur-xl;
+  }
+
+  .tabs {
+    @apply flex min-w-0 flex-1 items-end gap-1 overflow-x-auto;
+    scrollbar-width: none;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab {
+    @apply relative flex h-10 min-w-36 max-w-64 shrink-0 items-center gap-2 rounded-t-xl border border-transparent px-3 text-left text-[12.5px] font-medium text-zinc-500 transition-colors duration-150;
+    background: transparent;
+  }
+
+  .tab:hover {
+    @apply bg-white/[0.035] text-zinc-300;
+  }
+
+  .tab.active {
+    @apply border-white/[0.08] border-b-[#0a0c10] bg-[#0a0c10] text-zinc-100 shadow-[0_-8px_24px_rgba(0,0,0,0.12)];
+  }
+
+  .tab > span:not(.session-dot) {
+    @apply min-w-0 flex-1 truncate;
+  }
+
+  .tab > svg {
+    @apply shrink-0 text-zinc-600 transition-colors;
+  }
+
+  .tab > svg:hover {
+    @apply text-zinc-200;
+  }
+
+  .session-dot {
+    @apply size-2 shrink-0 rounded-full bg-zinc-700;
+  }
+
+  .session-dot.active {
+    @apply bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.35)];
+  }
+
+  .session-dot.reconnecting {
+    @apply bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.3)];
+  }
+
+  .session-dot.disconnected {
+    @apply bg-zinc-500;
+  }
+
+  .session-dot.failed {
+    @apply bg-rose-400 shadow-[0_0_10px_rgba(251,113,133,0.3)];
+  }
+
+  .terminal-host {
+    @apply relative min-h-0 min-w-0 overflow-hidden bg-[#080a0d] p-3;
+  }
+
+  .terminal-instance,
+  .terminal-instance .xterm {
+    @apply h-full w-full;
+  }
+
+  .spin {
+    animation: sshdeck-spin 0.9s linear infinite;
+  }
+}
+
+@keyframes sshdeck-spin {
+  to { transform: rotate(360deg); }
+}
