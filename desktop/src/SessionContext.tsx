@@ -1,4 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useLogs } from "./LogContext";
 import { hydrateSessionHistory, saveSessionHistory, SESSION_HISTORY_LIMIT, SessionHistoryItem, SessionView } from "./sessionLifecycle";
 import { useWorkbench } from "./WorkbenchContext";
 
@@ -41,19 +42,65 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const sessionsRef = useRef<SessionView[]>([]);
   const activeIdRef = useRef<string | null>(null);
   const runtimeActions = useRef<SessionRuntimeActions>({});
+  const previousSessionStates = useRef(new Map<string, SessionView["state"]>());
   const { registerAppActions } = useWorkbench();
+  const { addLog } = useLogs();
 
-  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
+  useEffect(() => {
+    const previous = previousSessionStates.current;
+    const next = new Map<string, SessionView["state"]>();
+    for (const session of sessions) {
+      next.set(session.id, session.state);
+      const before = previous.get(session.id);
+      if (!before) {
+        addLog({
+          subsystem: "session",
+          severity: "info",
+          message: `SSH session opened: ${session.name}`,
+          detail: `state=${session.state}`,
+          serverId: session.serverId,
+          sessionId: session.id,
+        });
+      } else if (before !== session.state) {
+        const severity = session.state === "failed"
+          ? "error"
+          : session.state === "reconnecting" || session.state === "disconnected"
+            ? "warn"
+            : "info";
+        const diagnostics = [
+          session.exitCode != null ? `exit=${session.exitCode}` : null,
+          session.signal ? `signal=${session.signal}` : null,
+          session.reconnectAttempts > 0 ? `attempt=${session.reconnectAttempts}` : null,
+        ].filter(Boolean).join(" · ");
+        addLog({
+          subsystem: "session",
+          severity,
+          message: `${session.name}: ${before} → ${session.state}`,
+          detail: diagnostics || null,
+          serverId: session.serverId,
+          sessionId: session.id,
+        });
+      }
+    }
+    previousSessionStates.current = next;
+    sessionsRef.current = sessions;
+  }, [addLog, sessions]);
+
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
 
   useEffect(() => {
     let cancelled = false;
     void hydrateSessionHistory()
       .then((items) => { if (!cancelled) setHistory(items); })
-      .catch((value) => { if (!cancelled) setHistoryError(`Could not load session history: ${String(value)}`); })
+      .catch((value) => {
+        if (cancelled) return;
+        const text = `Could not load session history: ${String(value)}`;
+        setHistoryError(text);
+        addLog({ subsystem: "session", severity: "error", message: "Session history load failed", detail: text });
+      })
       .finally(() => { if (!cancelled) setHistoryLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [addLog]);
 
   const selectSession = useCallback((id: string) => {
     if (!sessionsRef.current.some((session) => session.id === id)) return;
@@ -105,12 +152,26 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const requestReconnect = useCallback((session: SessionView) => {
+    addLog({
+      subsystem: "ssh",
+      severity: "info",
+      message: `Reconnect requested: ${session.name}`,
+      serverId: session.serverId,
+      sessionId: session.id,
+    });
     void runtimeActions.current.reconnect?.(session);
-  }, []);
+  }, [addLog]);
 
   const requestClose = useCallback((session: SessionView) => {
+    addLog({
+      subsystem: "session",
+      severity: "info",
+      message: `Close requested: ${session.name}`,
+      serverId: session.serverId,
+      sessionId: session.id,
+    });
     void runtimeActions.current.close?.(session);
-  }, []);
+  }, [addLog]);
 
   const registerRuntimeActions = useCallback((actions: SessionRuntimeActions) => {
     runtimeActions.current = { ...runtimeActions.current, ...actions };
