@@ -1,8 +1,10 @@
 use std::fs;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
+
+pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -53,6 +55,70 @@ pub struct SessionHistoryRecord {
     pub signal: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CommandSafetyPolicy {
+    #[default]
+    Standard,
+    Strict,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct WorkspaceSettings {
+    pub schema_version: u32,
+    pub auto_reconnect_default: bool,
+    pub diagnostic_timeout_seconds: u64,
+    pub transfer_concurrency: usize,
+    pub command_safety_policy: CommandSafetyPolicy,
+    pub restore_workspace_layout: bool,
+}
+
+impl Default for WorkspaceSettings {
+    fn default() -> Self {
+        Self {
+            schema_version: SETTINGS_SCHEMA_VERSION,
+            auto_reconnect_default: true,
+            diagnostic_timeout_seconds: 8,
+            transfer_concurrency: 2,
+            command_safety_policy: CommandSafetyPolicy::Standard,
+            restore_workspace_layout: true,
+        }
+    }
+}
+
+impl WorkspaceSettings {
+    pub fn migrate(&mut self) -> Result<()> {
+        match self.schema_version {
+            0 => self.schema_version = SETTINGS_SCHEMA_VERSION,
+            SETTINGS_SCHEMA_VERSION => {}
+            version => bail!(
+                "unsupported settings schema version {version}; this SSHDeck build supports version {SETTINGS_SCHEMA_VERSION}"
+            ),
+        }
+
+        self.diagnostic_timeout_seconds = self.diagnostic_timeout_seconds.clamp(2, 30);
+        self.transfer_concurrency = self.transfer_concurrency.clamp(1, 6);
+        Ok(())
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        if self.schema_version != SETTINGS_SCHEMA_VERSION {
+            bail!(
+                "settings schema version must be {SETTINGS_SCHEMA_VERSION}, got {}",
+                self.schema_version
+            );
+        }
+        if !(2..=30).contains(&self.diagnostic_timeout_seconds) {
+            bail!("diagnostic timeout must be between 2 and 30 seconds");
+        }
+        if !(1..=6).contains(&self.transfer_concurrency) {
+            bail!("transfer concurrency must be between 1 and 6");
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkbenchLayout {
@@ -86,6 +152,8 @@ pub struct WorkspaceData {
     pub session_history: Vec<SessionHistoryRecord>,
     #[serde(default)]
     pub layout: WorkbenchLayout,
+    #[serde(default)]
+    pub settings: WorkspaceSettings,
 }
 
 pub struct WorkspaceStore {
@@ -106,11 +174,14 @@ impl WorkspaceStore {
         }
         let data = fs::read_to_string(&self.path)
             .with_context(|| format!("failed to read {}", self.path.display()))?;
-        serde_json::from_str(&data)
-            .with_context(|| format!("failed to parse {}", self.path.display()))
+        let mut workspace: WorkspaceData = serde_json::from_str(&data)
+            .with_context(|| format!("failed to parse {}", self.path.display()))?;
+        workspace.settings.migrate()?;
+        Ok(workspace)
     }
 
     pub fn save(&self, data: &WorkspaceData) -> Result<()> {
+        data.settings.validate()?;
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)
                 .with_context(|| format!("failed to create {}", parent.display()))?;
@@ -130,7 +201,10 @@ impl WorkspaceStore {
 
 #[cfg(test)]
 mod tests {
-    use super::SessionHistoryRecord;
+    use super::{
+        CommandSafetyPolicy, SETTINGS_SCHEMA_VERSION, SessionHistoryRecord, WorkspaceData,
+        WorkspaceSettings,
+    };
 
     #[test]
     fn legacy_history_record_keeps_loading_without_new_optional_fields() {
@@ -149,5 +223,57 @@ mod tests {
 
         assert_eq!(record.started_at_ms, None);
         assert_eq!(record.signal, None);
+    }
+
+    #[test]
+    fn legacy_workspace_without_settings_gets_v1_defaults() {
+        let workspace: WorkspaceData = serde_json::from_str(
+            r#"{
+                "quickCommands":[],
+                "tunnels":[],
+                "sessionHistory":[],
+                "layout":{
+                    "primaryVisible":true,
+                    "secondaryVisible":true,
+                    "panelVisible":false,
+                    "panelTab":"transfers",
+                    "primaryWidth":320
+                }
+            }"#,
+        )
+        .expect("legacy workspace should deserialize");
+
+        assert_eq!(workspace.settings.schema_version, SETTINGS_SCHEMA_VERSION);
+        assert!(workspace.settings.auto_reconnect_default);
+        assert_eq!(workspace.settings.diagnostic_timeout_seconds, 8);
+        assert_eq!(workspace.settings.transfer_concurrency, 2);
+        assert_eq!(workspace.settings.command_safety_policy, CommandSafetyPolicy::Standard);
+        assert!(workspace.settings.restore_workspace_layout);
+    }
+
+    #[test]
+    fn settings_v0_migrates_and_clamps_legacy_values() {
+        let mut settings: WorkspaceSettings = serde_json::from_str(
+            r#"{
+                "schemaVersion":0,
+                "diagnosticTimeoutSeconds":60,
+                "transferConcurrency":0
+            }"#,
+        )
+        .expect("v0 settings should deserialize");
+
+        settings.migrate().expect("v0 settings should migrate");
+        assert_eq!(settings.schema_version, SETTINGS_SCHEMA_VERSION);
+        assert_eq!(settings.diagnostic_timeout_seconds, 30);
+        assert_eq!(settings.transfer_concurrency, 1);
+    }
+
+    #[test]
+    fn future_settings_schema_is_rejected() {
+        let mut settings = WorkspaceSettings {
+            schema_version: SETTINGS_SCHEMA_VERSION + 1,
+            ..WorkspaceSettings::default()
+        };
+        assert!(settings.migrate().is_err());
     }
 }
