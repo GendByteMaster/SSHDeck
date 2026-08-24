@@ -14,6 +14,8 @@ const key = (value: string) => (event: KeyboardEvent) => event.key.toLowerCase()
 const bindings: Binding[] = [
   { command: "workbench.commandPalette.open", matches: (event) => mod(event) && event.shiftKey && key("p")(event), allowInEditable: true, allowInTerminal: true },
   { command: "workbench.shortcuts.open", matches: (event) => event.key === "F1", allowInEditable: true, allowInTerminal: true },
+  { command: "workbench.view.search", matches: (event) => mod(event) && event.shiftKey && key("f")(event), allowInEditable: true, allowInTerminal: true },
+  { command: "workbench.view.settings", matches: (event) => mod(event) && !event.shiftKey && !event.altKey && event.key === ",", allowInEditable: true, allowInTerminal: true },
   { command: "server.add", matches: (event) => mod(event) && event.shiftKey && key("n")(event) },
   { command: "server.focusSearch", matches: (event) => mod(event) && event.shiftKey && key("k")(event) },
   { command: "session.next", matches: (event) => event.ctrlKey && !event.shiftKey && !event.altKey && event.key === "Tab", allowInTerminal: true },

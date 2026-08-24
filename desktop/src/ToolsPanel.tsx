@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { classifyCommand, CommandRisk, riskLabel } from "./commandSafety";
 import { formatUptime, ServerStatus } from "./serverStatus";
 import { formatDuration, SessionHistoryItem, SessionView } from "./sessionLifecycle";
+import { useSettings } from "./SettingsContext";
 import { useTunnels } from "./TunnelContext";
 import { tunnelStateLabel } from "./tunnelHealth";
 import { useWorkbench } from "./WorkbenchContext";
@@ -11,7 +12,7 @@ import { useWorkbench } from "./WorkbenchContext";
 type Server = { id: string; name: string; group: string | null };
 type QuickCommand = { id: string; name: string; command: string; serverId: string | null; group: string | null };
 type WorkspaceData = { quickCommands: QuickCommand[] };
-type PendingCommand = { item: QuickCommand; risk: CommandRisk };
+type PendingCommand = { item: QuickCommand; risk: CommandRisk; strictPolicy: boolean };
 
 type Props = {
   servers: Server[];
@@ -43,6 +44,7 @@ export function ToolsPanel({ servers, activeSession, activeServerId, activeStatu
   const activeServer = servers.find((server) => server.id === activeServerId) ?? null;
   const sessionUsable = activeSession?.state === "active";
   const { choosePanel } = useWorkbench();
+  const { settings, loading: settingsLoading } = useSettings();
   const { tunnels, statuses, loading: tunnelsLoading, error: tunnelError } = useTunnels();
 
   useEffect(() => { dataRef.current = data; }, [data]);
@@ -74,9 +76,11 @@ export function ToolsPanel({ servers, activeSession, activeServerId, activeStatu
 
   async function runCommand(item: QuickCommand) {
     if (!activeSession || !sessionUsable) return onError("Open an active server session before running a Quick Command.");
+    if (settingsLoading) return onError("Command safety settings are still loading. Try again in a moment.");
     const risk = classifyCommand(item.command);
-    if (risk.level === "low") return executeCommand(item);
-    setPendingCommand({ item, risk });
+    const strictPolicy = settings.commandSafetyPolicy === "strict";
+    if (risk.level === "low" && !strictPolicy) return executeCommand(item);
+    setPendingCommand({ item, risk, strictPolicy });
   }
 
   async function deleteCommand(id: string) {
@@ -125,11 +129,11 @@ export function ToolsPanel({ servers, activeSession, activeServerId, activeStatu
       <div className="tool-list">
         {visibleCommands.map((item) => {
           const risk = classifyCommand(item.command);
-          return <div className="tool-item" key={item.id}><button className="tool-run" onClick={() => void runCommand(item)} disabled={!sessionUsable}><Play size={12} /><span><strong>{item.name}</strong><small>{item.command}{risk.level !== "low" ? ` · ${riskLabel(risk.level)} risk` : ""}</small></span></button><button className="tool-delete" onClick={() => void deleteCommand(item.id)}><Trash2 size={12} /></button></div>;
+          return <div className="tool-item" key={item.id}><button className="tool-run" onClick={() => void runCommand(item)} disabled={!sessionUsable || settingsLoading}><Play size={12} /><span><strong>{item.name}</strong><small>{item.command}{risk.level !== "low" ? ` · ${riskLabel(risk.level)} risk` : settings.commandSafetyPolicy === "strict" ? " · Strict confirmation" : ""}</small></span></button><button className="tool-delete" onClick={() => void deleteCommand(item.id)}><Trash2 size={12} /></button></div>;
         })}
         {visibleCommands.length === 0 && <p className="tool-empty">No commands for this server.</p>}
       </div>
-      <p className="status-note">Potentially destructive Quick Commands are classified locally and require confirmation before they are sent to the SSH PTY.</p>
+      <p className="status-note">Command safety policy: <strong>{settings.commandSafetyPolicy === "strict" ? "Strict" : "Standard"}</strong>. Critical commands always require typing RUN; protection cannot be disabled.</p>
     </section>
 
     <section className="tool-section tunnels-section">
@@ -153,8 +157,9 @@ export function ToolsPanel({ servers, activeSession, activeServerId, activeStatu
 function DangerousCommandDialog({ pending, serverName, onClose, onConfirm }: { pending: PendingCommand; serverName: string; onClose: () => void; onConfirm: () => void }) {
   const [confirmation, setConfirmation] = useState("");
   const critical = pending.risk.level === "critical";
+  const strictLowRisk = pending.strictPolicy && pending.risk.level === "low";
   const allowed = !critical || confirmation.trim().toUpperCase() === "RUN";
-  return <div className="modal-backdrop"><div className="modal compact-modal"><div className="modal-head"><div><h2>{riskLabel(pending.risk.level)} risk command</h2><p>SSHDeck stopped this Quick Command before sending it to <strong>{serverName}</strong>.</p></div><button type="button" className="icon-button" onClick={onClose}><X size={16} /></button></div><pre className="config-snippet">{pending.item.command}</pre>{pending.risk.reasons.map((reason) => <p className="status-error" key={reason}>{reason}</p>)}{critical && <label>Type RUN to confirm<input autoFocus value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="RUN" /></label>}<p>Only continue if you have verified the target server and understand the command's effect.</p><div className="modal-actions"><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={!allowed} onClick={onConfirm}>Run anyway</button></div></div></div>;
+  return <div className="modal-backdrop"><div className="modal compact-modal"><div className="modal-head"><div><h2>{strictLowRisk ? "Strict policy confirmation" : `${riskLabel(pending.risk.level)} risk command`}</h2><p>SSHDeck stopped this Quick Command before sending it to <strong>{serverName}</strong>.</p></div><button type="button" className="icon-button" onClick={onClose}><X size={16} /></button></div><pre className="config-snippet">{pending.item.command}</pre>{strictLowRisk && <p className="status-error">Strict command-safety policy requires confirmation for every Quick Command.</p>}{pending.risk.reasons.map((reason) => <p className="status-error" key={reason}>{reason}</p>)}{critical && <label>Type RUN to confirm<input autoFocus value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="RUN" /></label>}<p>Only continue if you have verified the target server and understand the command's effect.</p><div className="modal-actions"><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={!allowed} onClick={onConfirm}>{strictLowRisk ? "Confirm and run" : "Run anyway"}</button></div></div></div>;
 }
 
 function QuickCommandDialog({ servers, activeServerId, onClose, onSaved, onError }: { servers: Server[]; activeServerId: string | null; onClose: () => void; onSaved: (data: WorkspaceData) => void; onError: (error: string) => void }) {

@@ -8,6 +8,7 @@ export type CommandId =
   | "workbench.view.search"
   | "workbench.view.sessions"
   | "workbench.view.history"
+  | "workbench.view.settings"
   | "workbench.primarySidebar.toggle"
   | "workbench.secondarySidebar.toggle"
   | "workbench.panel.toggle"
@@ -135,6 +136,15 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         category: "Sessions",
         enabled: true,
         run: workbench.requestShowHistoryWorkspace,
+      },
+      {
+        id: "workbench.view.settings",
+        title: "Show Settings",
+        description: "Configure versioned workspace, diagnostics, transfer, and command-safety behavior",
+        category: "Workbench",
+        shortcut: "Ctrl+,",
+        enabled: true,
+        run: workbench.requestShowSettingsWorkspace,
       },
       {
         id: "server.add",
@@ -341,6 +351,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
     workbench.requestShowHistoryWorkspace,
     workbench.requestShowSearchWorkspace,
     workbench.requestShowSessionsWorkspace,
+    workbench.requestShowSettingsWorkspace,
     workbench.requestStartSelectedTunnel,
     workbench.requestStopSelectedTunnel,
     workbench.secondaryVisible,

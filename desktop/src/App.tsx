@@ -17,6 +17,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyWorkspaceV2 } from "./product-v2";
 import { SessionTabs } from "./SessionTabs";
 import { SidebarV2 } from "./SidebarV2";
+import { useSettings } from "./SettingsContext";
 import { ToolsPanel } from "./ToolsPanel";
 import { useServerStatus } from "./serverStatus";
 import { SessionProcessStatus, SessionView } from "./sessionLifecycle";
@@ -66,6 +67,7 @@ export function App() {
   const [exportServer, setExportServer] = useState<ServerRecord | null>(null);
   const [deleteServer, setDeleteServer] = useState<ServerRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { settings, loading: settingsLoading } = useSettings();
 
   const terminals = useRef(new Map<string, TerminalEntry>());
   const terminalHost = useRef<HTMLDivElement | null>(null);
@@ -78,6 +80,8 @@ export function App() {
   const sessionServer = useRef(new Map<string, string>());
   const sessionPasswords = useRef(new Map<string, string>());
   const passwordSent = useRef(new Set<string>());
+  const settingsRef = useRef(settings);
+  const settingsLoadingRef = useRef(settingsLoading);
   const { statuses, checking, refreshServer } = useServerStatus(servers);
   const {
     sessions: tabs,
@@ -95,6 +99,8 @@ export function App() {
   useEffect(() => { tabsRef.current = tabs; }, [tabs]);
   useEffect(() => { serversRef.current = servers; }, [servers]);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
+  useEffect(() => { settingsLoadingRef.current = settingsLoading; }, [settingsLoading]);
 
   async function refreshServers() {
     const next = await invoke<ServerRecord[]>("list_servers");
@@ -190,7 +196,7 @@ export function App() {
     return () => unlistenResize?.();
   }, [activeId]);
 
-  async function startSession(server: ServerRecord, autoReconnect = true, reconnectAttempts = 0) {
+  async function startSession(server: ServerRecord, autoReconnect = settingsRef.current.autoReconnectDefault, reconnectAttempts = 0) {
     const id = await invoke<string>("terminal_start_server", { serverId: server.id });
     sessionServer.current.set(id, server.id);
     maybeSendPassword(id);
@@ -298,6 +304,10 @@ export function App() {
   }, [activeStatus?.latencyMs, activeTab?.id, activeTab?.name, activeTab?.state, setSessionSnapshot]);
 
   async function connect(server: ServerRecord) {
+    if (settingsLoadingRef.current) {
+      setError("Workspace settings are still loading. Try the connection again in a moment.");
+      return;
+    }
     const existing = tabsRef.current.find((tab) => tab.serverId === server.id);
     if (existing) {
       activeIdRef.current = existing.id;

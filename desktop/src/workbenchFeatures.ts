@@ -67,8 +67,8 @@ export const activityFeatures: WorkbenchFeature<ActivityFeatureId>[] = [
   {
     id: "settings",
     label: "Settings",
-    description: "Configure SSHDeck workspace behavior and safety policies.",
-    readiness: "planned",
+    description: "Configure versioned SSHDeck workspace behavior and safety policies.",
+    readiness: "ready",
   },
 ];
 

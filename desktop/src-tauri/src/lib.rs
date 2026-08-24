@@ -15,7 +15,7 @@ use sshdeck::config::SshConfig;
 use sshdeck::registry::{ServerRecord, ServerRegistry};
 use sshdeck::workspace::{
     QuickCommand, SessionHistoryRecord, TunnelKind, TunnelRecord, WorkbenchLayout, WorkspaceData,
-    WorkspaceStore,
+    WorkspaceSettings, WorkspaceStore,
 };
 use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
@@ -418,6 +418,21 @@ fn workspace_save_layout(layout: WorkbenchLayout) -> Result<WorkspaceData, Strin
 }
 
 #[tauri::command]
+fn workspace_save_settings(
+    mut settings: WorkspaceSettings,
+    transfers: State<'_, transfers::TransferManager>,
+) -> Result<WorkspaceData, String> {
+    settings.migrate().map_err(|error| error.to_string())?;
+    settings.validate().map_err(|error| error.to_string())?;
+    let store = WorkspaceStore::load_default().map_err(|error| error.to_string())?;
+    let mut data = store.load().map_err(|error| error.to_string())?;
+    data.settings = settings.clone();
+    store.save(&data).map_err(|error| error.to_string())?;
+    transfers.set_max_concurrent(settings.transfer_concurrency);
+    Ok(data)
+}
+
+#[tauri::command]
 fn workspace_save_session_history(
     mut items: Vec<SessionHistoryRecord>,
 ) -> Result<WorkspaceData, String> {
@@ -767,7 +782,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(Sessions::default())
         .manage(Tunnels::default())
-        .manage(transfers::TransferManager::default())
+        .manage(transfers::TransferManager::from_workspace())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             list_hosts,
@@ -783,6 +798,7 @@ pub fn run() {
             terminal_close,
             workspace_load,
             workspace_save_layout,
+            workspace_save_settings,
             workspace_save_session_history,
             copy_text,
             save_quick_command,
