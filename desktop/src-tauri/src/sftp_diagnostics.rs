@@ -149,6 +149,30 @@ fn classify_ssh_failure(detail: &str) -> Failure {
         };
     }
 
+    if lowered.contains("banner exchange")
+        || lowered.contains("kex_exchange_identification")
+        || lowered.contains("connection closed by remote host")
+        || lowered.contains("connection reset by peer")
+    {
+        return Failure {
+            category: "ssh_service",
+            summary: "TCP is reachable, but the SSH service did not complete the protocol handshake".to_owned(),
+            recommendation: "The TCP connection was accepted, but sshd did not complete the SSH banner/key-exchange phase. Check that sshd is healthy and listening correctly, then inspect sshd logs, ProxyJump/ProxyCommand, firewall/fail2ban rules, and connection limits.".to_owned(),
+            detail: detail.to_owned(),
+        };
+    }
+
+    if lowered.contains("no matching host key type")
+        || lowered.contains("no matching key exchange method")
+    {
+        return Failure {
+            category: "handshake",
+            summary: "SSH algorithm negotiation failed".to_owned(),
+            recommendation: "Inspect the client/server SSH algorithm configuration. Prefer updating the server configuration rather than re-enabling obsolete algorithms globally.".to_owned(),
+            detail: detail.to_owned(),
+        };
+    }
+
     if lowered.contains("connection timed out")
         || lowered.contains("operation timed out")
         || lowered.contains("no route to host")
@@ -159,20 +183,6 @@ fn classify_ssh_failure(detail: &str) -> Failure {
             category: "network",
             summary: "SSH endpoint is not reachable".to_owned(),
             recommendation: "Check the server address/port, firewall or security group, VPN, and whether sshd is listening.".to_owned(),
-            detail: detail.to_owned(),
-        };
-    }
-
-    if lowered.contains("kex_exchange_identification")
-        || lowered.contains("no matching host key type")
-        || lowered.contains("no matching key exchange method")
-        || lowered.contains("banner exchange")
-        || lowered.contains("connection reset")
-    {
-        return Failure {
-            category: "handshake",
-            summary: "SSH handshake failed".to_owned(),
-            recommendation: "Inspect sshd logs and client/server algorithm compatibility. A proxy, fail2ban rule, or connection limit can also terminate the handshake.".to_owned(),
             detail: detail.to_owned(),
         };
     }
@@ -462,6 +472,15 @@ mod tests {
     fn classifies_network_failure() {
         let failure = classify_ssh_failure("ssh: connect to host example port 22: Connection refused");
         assert_eq!(failure.category, "network");
+    }
+
+    #[test]
+    fn classifies_banner_timeout_as_ssh_service_failure() {
+        let failure = classify_ssh_failure(
+            "Connection timed out during banner exchange\r\nConnection to 161.104.17.83 port 22 timed out",
+        );
+        assert_eq!(failure.category, "ssh_service");
+        assert!(failure.summary.contains("TCP is reachable"));
     }
 
     #[test]
