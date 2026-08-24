@@ -37,9 +37,13 @@ export function SettingsWorkspace() {
   const dirty = useMemo(() => !sameSettings(draft, settings), [draft, settings]);
 
   async function save() {
-    await saveSettings(draft);
-    setSavedNotice(true);
-    window.setTimeout(() => setSavedNotice(false), 1800);
+    try {
+      await saveSettings(draft);
+      setSavedNotice(true);
+      window.setTimeout(() => setSavedNotice(false), 1800);
+    } catch {
+      // SettingsProvider exposes the persisted error state in this workspace.
+    }
   }
 
   if (error) {
