@@ -1,0 +1,76 @@
+name: one-shot fix SFTP log bridge
+
+on:
+  pull_request:
+    types: [synchronize]
+    branches: [dev/master]
+
+jobs:
+  apply:
+    if: github.head_ref == 'feat/workbench-logs' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/workbench-logs
+
+      - name: Move diagnostic emit into existing command
+        shell: python
+        run: |
+          from pathlib import Path
+
+          diag = Path("desktop/src-tauri/src/sftp_diagnostics.rs")
+          text = diag.read_text()
+          text = text.replace("use serde::Serialize;\n", "use serde::Serialize;\nuse tauri::{AppHandle, Emitter};\n", 1)
+          text = text.replace(
+              "pub(super) fn sftp_diagnose(server_id: String) -> Result<SftpDiagnosticResult, String> {",
+              "pub(super) fn sftp_diagnose(server_id: String, app: AppHandle) -> Result<SftpDiagnosticResult, String> {",
+              1,
+          )
+          old_start = "    match ssh_probe(&server) {"
+          if old_start not in text:
+              raise SystemExit("diagnostic function marker missing")
+          # Wrap the existing result-producing body so every return path is emitted once.
+          text = text.replace(old_start, "    let result = (|| {\n        match ssh_probe(&server) {", 1)
+          old_end = "    }\n}\n\n#[cfg(test)]"
+          new_end = '''        }
+    })()?;
+    let _ = app.emit("sshdeck://sftp-diagnostic", result.clone());
+    Ok(result)
+}
+
+#[cfg(test)]'''
+          if old_end not in text:
+              raise SystemExit("diagnostic function end marker missing")
+          text = text.replace(old_end, new_end, 1)
+          diag.write_text(text)
+
+          lib = Path("desktop/src-tauri/src/lib.rs")
+          text = lib.read_text()
+          wrapper_start = '''#[tauri::command]
+fn sftp_diagnose(
+    server_id: String,
+    app: AppHandle,
+) -> Result<sftp_diagnostics::SftpDiagnosticResult, String> {
+    let result = sftp_diagnostics::sftp_diagnose(server_id)?;
+    let _ = app.emit("sshdeck://sftp-diagnostic", result.clone());
+    Ok(result)
+}
+
+'''
+          if wrapper_start not in text:
+              raise SystemExit("wrapper block missing")
+          text = text.replace(wrapper_start, "", 1)
+          text = text.replace("            sftp_diagnose,", "            sftp_diagnostics::sftp_diagnose,", 1)
+          lib.write_text(text)
+
+      - name: Remove workflow and commit
+        run: |
+          rm .github/workflows/one-shot-fix-sftp-log-bridge.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add desktop/src-tauri/src/lib.rs desktop/src-tauri/src/sftp_diagnostics.rs .github/workflows/one-shot-fix-sftp-log-bridge.yml
+          git commit -m "fix(logs): avoid duplicate Tauri SFTP command symbols"
+          git push origin HEAD:feat/workbench-logs
