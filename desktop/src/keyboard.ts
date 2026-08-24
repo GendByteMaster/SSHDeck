@@ -23,6 +23,12 @@ function click(element: Element | null) {
   else if (element) element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 }
 
+function buttonByText(text: string) {
+  const needle = text.trim().toLowerCase();
+  return [...document.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent?.trim().toLowerCase() === needle) ?? null;
+}
+
 function activeTab() {
   return document.querySelector<HTMLElement>(".tab.active");
 }
@@ -46,22 +52,26 @@ function cycleTabs(backward: boolean) {
 }
 
 function focusSearch() {
-  const input = document.querySelector<HTMLInputElement>(".search input");
+  const input = document.querySelector<HTMLInputElement>('input[placeholder="Search servers"]');
   input?.focus();
   input?.select();
 }
 
+function serverRows() {
+  return visible<HTMLButtonElement>(".workbench-primary .group > button.text-left");
+}
+
 function focusServer(delta = 0) {
-  const rows = visible<HTMLButtonElement>(".server-row");
+  const rows = serverRows();
   if (rows.length === 0) return;
   const current = rows.findIndex((row) => row === document.activeElement);
-  const base = current < 0 ? 0 : current;
+  const base = current < 0 ? (delta < 0 ? 0 : -1) : current;
   const next = rows[(base + delta + rows.length) % rows.length];
   next?.focus();
 }
 
 const focusZones = [
-  () => document.querySelector<HTMLElement>(".search input"),
+  () => document.querySelector<HTMLElement>('input[placeholder="Search servers"]'),
   () => activeTab() ?? document.querySelector<HTMLElement>(".tabs .tab"),
   () => document.querySelector<HTMLElement>(".tools-panel button:not(:disabled)"),
   () => document.querySelector<HTMLElement>(".xterm-helper-textarea"),
@@ -108,6 +118,7 @@ function shortcutOverlay() {
     <section class="keyboard-card" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
       <header><div><strong>Keyboard shortcuts</strong><span>SSHDeck navigation</span></div><button type="button" aria-label="Close">×</button></header>
       <div class="keyboard-shortcuts">
+        <span>Command palette</span><kbd>${isMac ? "⌘⇧P" : "Ctrl+Shift+P"}</kbd>
         <span>Search servers</span><kbd>${modLabel}K</kbd>
         <span>Add server</span><kbd>${modLabel}N</kbd>
         <span>Next / previous tab</span><kbd>Ctrl+Tab / Ctrl+Shift+Tab</kbd>
@@ -160,7 +171,7 @@ export function installKeyboardNavigation(): Cleanup {
     }
     if (modifier && event.shiftKey && event.key.toLowerCase() === "n") {
       event.preventDefault();
-      click(document.querySelector(".sidebar-actions .primary"));
+      click(buttonByText("Add server"));
       return;
     }
     if (modifier && event.shiftKey && event.key.toLowerCase() === "w") {
@@ -179,7 +190,7 @@ export function installKeyboardNavigation(): Cleanup {
       return;
     }
 
-    const sidebarFocused = event.target instanceof Element && Boolean(event.target.closest(".sidebar"));
+    const sidebarFocused = event.target instanceof Element && Boolean(event.target.closest(".workbench-primary"));
     if (!editable && sidebarFocused && event.key === "ArrowDown") {
       event.preventDefault();
       focusServer(1);
