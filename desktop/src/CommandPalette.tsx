@@ -89,17 +89,23 @@ export function CommandPalette() {
     const onKeyDown = (event: KeyboardEvent) => {
       const commandPalette = (event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "p";
       if (commandPalette) {
+        // WebView2 maps Ctrl+Shift+P to its print UI. Intercept this at the
+        // capture phase so the desktop workbench owns the accelerator before
+        // the embedded browser can execute its default action.
         event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
         setOpen((value) => !value);
         return;
       }
       if (open && event.key === "Escape") {
         event.preventDefault();
+        event.stopPropagation();
         setOpen(false);
       }
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
   }, [open]);
 
   useEffect(() => {
