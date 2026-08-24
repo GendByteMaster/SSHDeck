@@ -1,0 +1,28 @@
+@import "tailwindcss";
+@import "@heroui/styles";
+
+@theme {
+  --font-sans: "Segoe UI Variable", "SF Pro Display", "SF Pro Text", Inter, system-ui, sans-serif;
+  --color-sshdeck-bg: #090b0f;
+  --color-sshdeck-panel: #11141a;
+  --color-sshdeck-border: rgba(255, 255, 255, 0.08);
+  --color-sshdeck-muted: #7f8896;
+  --color-sshdeck-accent: #4f7cff;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--color-sshdeck-bg);
+  color: #f5f7fb;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
