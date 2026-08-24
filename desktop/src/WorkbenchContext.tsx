@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useContext, useMemo, useState } from "react";
+import { createContext, ReactNode, useCallback, useContext, useMemo, useState } from "react";
 
 export type PanelTab = "terminal" | "ports" | "logs" | "transfers";
 
@@ -57,6 +57,14 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [session, setSessionSnapshot] = useState<SessionSnapshot>(defaults.session);
   const [appActions, setAppActions] = useState<AppActions>({});
 
+  const registerAppActions = useCallback((actions: AppActions) => {
+    setAppActions((current) => ({ ...current, ...actions }));
+  }, []);
+  const choosePanel = useCallback((tab: PanelTab) => {
+    setPanelTab(tab);
+    setPanelVisible(true);
+  }, []);
+
   const value = useMemo<WorkbenchContextValue>(() => ({
     primaryVisible,
     secondaryVisible,
@@ -66,14 +74,14 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     setPrimaryVisible,
     setSecondaryVisible,
     setPanelVisible,
-    choosePanel: (tab) => { setPanelTab(tab); setPanelVisible(true); },
+    choosePanel,
     setSessionSnapshot,
-    registerAppActions: (actions) => setAppActions((current) => ({ ...current, ...actions })),
+    registerAppActions,
     requestAddServer: () => appActions.addServer?.(),
     requestImportOpenSsh: () => appActions.importOpenSsh?.(),
     requestFocusServerSearch: () => appActions.focusServerSearch?.(),
     requestSelectSession: (index) => appActions.selectSession?.(index),
-  }), [appActions, panelTab, panelVisible, primaryVisible, secondaryVisible, session]);
+  }), [appActions, choosePanel, panelTab, panelVisible, primaryVisible, registerAppActions, secondaryVisible, session]);
 
   return <WorkbenchContext.Provider value={value}>{children}</WorkbenchContext.Provider>;
 }
