@@ -1,0 +1,50 @@
+name: Integrate SFTP Diagnostics
+
+on:
+  push:
+    branches: [feat/sftp-diagnostics]
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/sftp-diagnostics
+
+      - name: Register diagnostics command
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("desktop/src-tauri/src/lib.rs")
+          text = path.read_text()
+          old = "mod status;\nmod sftp;\nmod transfers;"
+          new = "mod status;\nmod sftp;\nmod sftp_diagnostics;\nmod transfers;"
+          if old not in text:
+              raise SystemExit("module marker not found")
+          text = text.replace(old, new, 1)
+
+          old = "            sftp::sftp_download,\n            transfers::sftp_start_upload,"
+          new = "            sftp::sftp_download,\n            sftp_diagnostics::sftp_diagnose,\n            transfers::sftp_start_upload,"
+          if old not in text:
+              raise SystemExit("handler marker not found")
+          path.write_text(text.replace(old, new, 1))
+
+      - name: Format Rust
+        run: cargo fmt --all
+
+      - name: Remove one-shot workflow
+        run: rm .github/workflows/integrate-sftp-diagnostics.yml
+
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add desktop/src-tauri/src/lib.rs desktop/src-tauri/src/sftp_diagnostics.rs .github/workflows/integrate-sftp-diagnostics.yml
+          git commit -m "feat(sftp): register diagnostics command"
+          git push origin HEAD:feat/sftp-diagnostics
