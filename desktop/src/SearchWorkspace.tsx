@@ -285,7 +285,7 @@ export function SearchWorkspace({ servers, onConnectServer }: Props) {
           meta: scopedServer ? `Server: ${scopedServer.name}` : item.group ? `Group: ${item.group}` : "All servers",
           score,
           actionLabel: "Copy",
-          action: () => invoke("copy_text", { text: item.command }),
+          action: () => invoke<void>("copy_text", { text: item.command }),
         });
       }
 
@@ -304,7 +304,7 @@ export function SearchWorkspace({ servers, onConnectServer }: Props) {
           actionLabel: command.enabled ? "Run" : "Unavailable",
           actionDisabled: !command.enabled,
           actionReason: command.availabilityReason,
-          action: command.enabled ? () => execute(command.id) : undefined,
+          action: command.enabled ? async () => { await execute(command.id); } : undefined,
         });
       }
     }
