@@ -7,8 +7,11 @@ export type SidebarServer = {
   host: string;
   user: string | null;
   port: number;
+  identityFile: string | null;
   group: string | null;
   favorite: boolean;
+  sourceAlias: string | null;
+  lastConnectedAt: number | null;
 };
 
 type Props = {
