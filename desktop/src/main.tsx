@@ -9,9 +9,16 @@ import "./globals.css";
 import { App } from "./App";
 import { CommandPalette } from "./CommandPalette";
 import { WorkbenchChrome } from "./WorkbenchChrome";
+import { WorkbenchProvider } from "./WorkbenchContext";
 import { installKeyboardNavigation } from "./keyboard";
 
-ReactDOM.createRoot(document.getElementById("root")!).render(<><App /><WorkbenchChrome /><CommandPalette /></>);
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <WorkbenchProvider>
+    <App />
+    <WorkbenchChrome />
+    <CommandPalette />
+  </WorkbenchProvider>,
+);
 
 const uninstallKeyboardNavigation = installKeyboardNavigation();
 window.addEventListener("beforeunload", uninstallKeyboardNavigation, { once: true });
