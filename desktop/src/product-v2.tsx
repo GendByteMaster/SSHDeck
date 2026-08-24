@@ -1,16 +1,6 @@
 import { Button as HeroButton } from "@heroui/react";
 import { Keyboard, Plus, Server } from "lucide-react";
 import { motion } from "motion/react";
-import { ReactNode } from "react";
-
-export function ProductSection({ eyebrow, title, description, children }: { eyebrow?: string; title: string; description?: string; children?: ReactNode }) {
-  return <section className="v2-product-section">
-    {eyebrow && <span className="v2-eyebrow">{eyebrow}</span>}
-    <h2>{title}</h2>
-    {description && <p>{description}</p>}
-    {children}
-  </section>;
-}
 
 export function EmptyWorkspaceV2({ onAddServer, onImport }: { onAddServer: () => void; onImport: () => void }) {
   return <div className="absolute inset-0 flex items-center justify-center px-6 py-10">
@@ -54,8 +44,4 @@ export function EmptyWorkspaceV2({ onAddServer, onImport }: { onAddServer: () =>
       </div>
     </motion.div>
   </div>;
-}
-
-export function InspectorEmptyV2() {
-  return <div className="v2-inspector-empty"><div className="v2-inspector-icon"><Server size={18} /></div><strong>No active server</strong><span>Select a server to inspect connection health, session state, commands and tunnels.</span></div>;
 }
