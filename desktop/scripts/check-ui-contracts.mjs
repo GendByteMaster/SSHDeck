@@ -65,14 +65,17 @@ notContains("no duplicate terminal panel route", source.chrome, "workbench.panel
 
 // Phase 7 made primary workspace selection a shared Workbench concern.
 contains("shared primary view state", source.workbench, "const [primaryView, setPrimaryView]");
+contains("shared primary view helper", source.workbench, "const showPrimaryView = useCallback((view: PrimaryView) => {");
+contains("shared primary view reveals sidebar", source.workbench, "setPrimaryVisible(true);");
+contains("shared primary view selects destination", source.workbench, "setPrimaryView(view);");
 contains("Sidebar consumes shared primary view", source.sidebar, "primaryView: view");
 notContains("Sidebar has no private primary view state", source.sidebar, "useState<SidebarView>");
 contains("Activity Bar executes shared commands", source.sidebar, "execute(activityCommand[id])");
 contains("Bottom Panel executes shared commands", source.chrome, "execute(panelCommand[id])");
 
-// Server-search focus must reveal the correct workspace before the DOM focus request runs.
-contains("server search reveals sidebar", source.workbench, "setPrimaryVisible(true)");
-contains("server search selects Servers workspace", source.workbench, "setPrimaryView(\"servers\")");
+// Server-search focus must use the shared Servers route before the deferred DOM focus request runs.
+contains("server search uses shared Servers workspace route", source.workbench, "showPrimaryView(\"servers\")");
+contains("server search delegates DOM focus", source.workbench, "appActions.current.focusServerSearch?.()");
 contains("server search defers DOM focus", source.sidebar, "requestAnimationFrame(() =>");
 
 // Ready-but-unavailable commands remain discoverable and explain why they cannot run.
