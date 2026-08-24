@@ -1,0 +1,119 @@
+.app-shell {
+  transition: grid-template-columns var(--ds-duration-normal) var(--ds-ease);
+}
+
+/* Empty workspace: the inspector is contextual, so it should not consume space. */
+.app-shell:not(:has(.terminal-host)) {
+  grid-template-columns: 284px minmax(0, 1fr);
+}
+
+.app-shell:not(:has(.terminal-host)) > .tools-panel {
+  display: none;
+}
+
+.app-shell:not(:has(.terminal-host)) .topbar {
+  display: none;
+}
+
+.app-shell:not(:has(.terminal-host)) .workspace {
+  display: grid;
+  min-width: 0;
+}
+
+.v3-empty-workspace {
+  align-self: center;
+  justify-self: center;
+  display: grid;
+  justify-items: center;
+  width: min(460px, calc(100% - 64px));
+  padding: 24px;
+  text-align: center;
+}
+
+.v3-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 18px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.035);
+  color: var(--ds-text-secondary);
+}
+
+.v3-empty-workspace h1 {
+  margin: 0;
+  color: var(--ds-text-primary);
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -.025em;
+}
+
+.v3-empty-workspace > p {
+  max-width: 390px;
+  margin: 9px 0 0;
+  color: var(--ds-text-tertiary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.v3-empty-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 20px;
+}
+
+.v3-empty-actions .ds-button {
+  min-height: 36px;
+  padding-inline: 12px;
+  font-size: 11px;
+}
+
+.v3-empty-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 24px;
+  color: var(--ds-text-disabled);
+  font-size: 9px;
+}
+
+.v3-empty-hint svg {
+  margin-right: 2px;
+}
+
+.v3-empty-hint kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  margin-right: 2px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 5px;
+  background: rgba(255,255,255,.035);
+  color: var(--ds-text-tertiary);
+  font: 500 8px var(--ds-font-ui);
+}
+
+/* Active workspace: terminal and inspector become the primary surfaces. */
+.app-shell:has(.terminal-host) .workspace {
+  background: #07090d;
+}
+
+.app-shell:has(.terminal-host) .tools-panel {
+  width: auto;
+}
+
+@media (max-width: 1180px) {
+  .app-shell:not(:has(.terminal-host)) {
+    grid-template-columns: 248px minmax(0, 1fr);
+  }
+
+  .v3-empty-workspace {
+    width: min(420px, calc(100% - 40px));
+  }
+}
