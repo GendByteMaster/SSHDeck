@@ -10,19 +10,22 @@ import { CommandPalette } from "./CommandPalette";
 import { DesktopShortcuts } from "./DesktopShortcuts";
 import { WorkbenchChrome } from "./WorkbenchChrome";
 import { WorkbenchProvider } from "./WorkbenchContext";
+import { TransferProvider } from "./TransferContext";
 import { CommandProvider } from "./commands/CommandService";
 import { KeybindingService } from "./commands/KeybindingService";
 import { NativeMenu } from "./commands/NativeMenu";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <WorkbenchProvider>
-    <CommandProvider>
+    <TransferProvider>
+      <CommandProvider>
       <KeybindingService />
       <NativeMenu />
       <App />
       <WorkbenchChrome />
       <CommandPalette />
       <DesktopShortcuts />
-    </CommandProvider>
+      </CommandProvider>
+    </TransferProvider>
   </WorkbenchProvider>,
 );

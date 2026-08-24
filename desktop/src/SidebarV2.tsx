@@ -63,7 +63,7 @@ const activityItems = [
   { id: null, label: "Port forwarding", icon: Waypoints, enabled: false },
   { id: null, label: "Sessions", icon: TerminalSquare, enabled: false },
   { id: null, label: "History", icon: History, enabled: false },
-  { id: null, label: "Transfers", icon: FolderClock, enabled: false },
+  { id: null, label: "Transfers", icon: FolderClock, enabled: true },
 ];
 
 function statusClass(state: string) {
@@ -126,7 +126,7 @@ export function SidebarV2({ servers, favorites, groups, query, statuses, checkin
   const dragStart = useRef<{ x: number; width: number } | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const [view, setView] = useState<SidebarView>("servers");
-  const { registerAppActions, primaryWidth, setPrimaryWidth, selectedServer, setSelectedServer } = useWorkbench();
+  const { choosePanel, panelTab, panelVisible, registerAppActions, primaryWidth, setPrimaryWidth, selectedServer, setSelectedServer } = useWorkbench();
   const popupCommands = useCommandContextMenu();
   const allServers = servers;
 
@@ -193,7 +193,7 @@ export function SidebarV2({ servers, favorites, groups, query, statuses, checkin
       <div className="mb-2 grid size-9 place-items-center rounded-xl bg-zinc-100 text-[13px] font-bold text-zinc-900 shadow-sm">S</div>
       <div className="flex w-full flex-col items-center gap-1">
         {activityItems.map(({ id, label, icon: Icon, enabled }, index) => {
-          const active = id !== null && view === id;
+          const active = id !== null ? view === id : label === "Transfers" && panelVisible && panelTab === "transfers";
           return <button
             key={`${label}-${index}`}
             type="button"
@@ -201,7 +201,7 @@ export function SidebarV2({ servers, favorites, groups, query, statuses, checkin
             aria-label={label}
             aria-current={active ? "page" : undefined}
             disabled={!enabled}
-            onClick={() => { if (id) setView(id); }}
+            onClick={() => { if (id) setView(id); else if (label === "Transfers") choosePanel("transfers"); }}
             className={`relative grid size-10 place-items-center rounded-xl transition-colors ${active ? "bg-[#4f7cff]/12 text-[#89a5ff]" : "text-zinc-600 hover:bg-white/[0.035] hover:text-zinc-400 disabled:cursor-default disabled:opacity-65"}`}
           >
             {active && <span className="absolute -left-1.5 h-5 w-0.5 rounded-r-full bg-[#6f91ff]" />}

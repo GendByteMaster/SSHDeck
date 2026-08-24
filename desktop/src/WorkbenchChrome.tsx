@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { CommandId, useCommands } from "./commands/CommandService";
 import { PanelTab, useWorkbench } from "./WorkbenchContext";
+import { TransfersPanel } from "./TransfersPanel";
 
 const panelTabs: { id: PanelTab; label: string; icon: typeof TerminalSquare; command: CommandId }[] = [
   { id: "terminal", label: "Terminal", icon: TerminalSquare, command: "workbench.panel.terminal" },
@@ -22,6 +23,7 @@ const panelTabs: { id: PanelTab; label: string; icon: typeof TerminalSquare; com
 ];
 
 function PanelBody({ tab, name }: { tab: PanelTab; name: string }) {
+  if (tab === "transfers") return <TransfersPanel />;
   const copy = {
     terminal: [name, "The interactive PTY remains in the session workspace. Auxiliary output can live here."],
     ports: ["Port forwarding", "Managed SSH tunnels and forwarding state belong in this desktop panel."],
