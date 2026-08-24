@@ -1,0 +1,134 @@
+/* Large-desktop density and empty-workspace grid correction.
+   Loaded last so it fixes presentation without touching SSH/PTTY behavior. */
+
+/* When no terminal exists, remove the stale 42px topbar row entirely so the
+   welcome state is centered in the full editor area. */
+.app-shell:not(:has(.terminal-host)) .workspace,
+.app-shell:not(:has(.tab.active)) .workspace {
+  grid-template-rows: minmax(0, 1fr) !important;
+}
+
+.app-shell:not(:has(.terminal-host)) .v3-empty-workspace,
+.app-shell:not(:has(.tab.active)) .v3-empty-workspace {
+  grid-row: 1 !important;
+  place-self: center !important;
+}
+
+/* Full-size desktop density. Fixed 11-13px controls look undersized on wide
+   desktop displays, so give the workbench slightly more physical presence. */
+@media (min-width: 1440px) {
+  :root {
+    --wb-activity-width: 56px;
+    --wb-status-height: 30px;
+  }
+
+  .workbench-primary {
+    min-width: 320px !important;
+  }
+
+  .activity-bar {
+    width: 56px !important;
+    padding: 14px 7px 10px !important;
+  }
+
+  .activity-brand {
+    width: 36px !important;
+    height: 36px !important;
+    border-radius: 11px !important;
+    font-size: 14px !important;
+  }
+
+  .activity-item {
+    width: 42px !important;
+    height: 42px !important;
+  }
+
+  .context-sidebar {
+    padding: 18px 16px 16px !important;
+    gap: 14px !important;
+  }
+
+  .workbench-view-title .eyebrow {
+    font-size: 11px !important;
+  }
+
+  .workbench-view-title strong {
+    font-size: 16px !important;
+  }
+
+  .workbench-primary .primary,
+  .workbench-primary .secondary,
+  .workbench-primary .search {
+    min-height: 42px !important;
+  }
+
+  .workbench-primary .primary,
+  .workbench-primary .secondary,
+  .workbench-primary .search input {
+    font-size: 13px !important;
+  }
+
+  .section-label {
+    margin-top: 15px !important;
+    font-size: 11px !important;
+  }
+
+  .v2-server-item {
+    min-height: 54px !important;
+  }
+
+  .v2-server-main {
+    padding-block: 10px !important;
+  }
+
+  .v2-server-copy strong {
+    font-size: 14px !important;
+  }
+
+  .v2-server-copy small {
+    font-size: 12px !important;
+  }
+
+  .v3-empty-workspace {
+    width: min(640px, calc(100% - 64px)) !important;
+    padding: 56px 32px !important;
+  }
+
+  .v3-empty-icon {
+    width: 64px !important;
+    height: 64px !important;
+    margin-bottom: 20px !important;
+  }
+
+  .v3-empty-workspace h1 {
+    font-size: clamp(28px, 2vw, 36px) !important;
+    margin-bottom: 12px !important;
+  }
+
+  .v3-empty-workspace > p {
+    max-width: 500px !important;
+    font-size: 14px !important;
+  }
+
+  .v3-empty-actions {
+    margin-top: 24px !important;
+    gap: 10px !important;
+  }
+
+  .v3-empty-actions button {
+    min-height: 42px !important;
+    padding-inline: 18px !important;
+    font-size: 13px !important;
+  }
+
+  .v3-empty-hint {
+    margin-top: 22px !important;
+    font-size: 11px !important;
+  }
+
+  .workbench-statusbar,
+  .workbench-statusbar button,
+  .workbench-statusbar span {
+    font-size: 12px !important;
+  }
+}
