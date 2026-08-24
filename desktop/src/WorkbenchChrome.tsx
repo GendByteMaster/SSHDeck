@@ -8,34 +8,28 @@ import {
   PanelBottom,
   PanelLeftClose,
   PanelRightClose,
-  TerminalSquare,
   UploadCloud,
 } from "lucide-react";
 import { CommandId, useCommands } from "./commands/CommandService";
-import { PanelTab, useWorkbench } from "./WorkbenchContext";
 import { TransfersPanel } from "./TransfersPanel";
+import { useWorkbench } from "./WorkbenchContext";
+import { PanelFeatureId, productionPanelFeatures } from "./workbenchFeatures";
 
-const panelTabs: { id: PanelTab; label: string; icon: typeof TerminalSquare; command: CommandId }[] = [
-  { id: "terminal", label: "Terminal", icon: TerminalSquare, command: "workbench.panel.terminal" },
-  { id: "ports", label: "Ports", icon: Cable, command: "workbench.panel.ports" },
-  { id: "logs", label: "Logs", icon: Braces, command: "workbench.panel.logs" },
-  { id: "transfers", label: "Transfers", icon: UploadCloud, command: "workbench.panel.transfers" },
-];
+const panelIcons: Record<PanelFeatureId, typeof UploadCloud> = {
+  ports: Cable,
+  logs: Braces,
+  transfers: UploadCloud,
+};
 
-function PanelBody({ tab, name }: { tab: PanelTab; name: string }) {
-  if (tab === "transfers") return <TransfersPanel />;
-  const copy = {
-    terminal: [name, "The interactive PTY remains in the session workspace. Auxiliary output can live here."],
-    ports: ["Port forwarding", "Managed SSH tunnels and forwarding state belong in this desktop panel."],
-    logs: ["Session diagnostics", "Structured SSH lifecycle logs and connection diagnostics live here."],
-    transfers: ["Transfers", "SFTP transfer queue foundation. No transfer is currently active."],
-  }[tab];
+const panelCommands: Partial<Record<PanelFeatureId, CommandId>> = {
+  transfers: "workbench.panel.transfers",
+};
 
-  return <motion.div key={tab} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: "easeOut" }} className="flex h-full flex-col items-start justify-center gap-1.5 px-6 py-4">
-    <strong className="text-[13px] font-semibold text-zinc-200">{copy[0]}</strong>
-    <span className="max-w-3xl text-[11px] leading-5 text-zinc-500">{copy[1]}</span>
-  </motion.div>;
-}
+const panelTabs = productionPanelFeatures().flatMap((feature) => {
+  const command = panelCommands[feature.id];
+  if (!command) return [];
+  return [{ ...feature, command, icon: panelIcons[feature.id] }];
+});
 
 function stateDotClass(state: string) {
   if (state === "active") return "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,.3)]";
@@ -57,7 +51,7 @@ export function WorkbenchChrome() {
           <span className="flex-1" />
           <Button isIconOnly aria-label="Hide panel" onPress={() => void execute("workbench.panel.toggle")} className="size-8 min-w-8 rounded-lg bg-transparent text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200"><ChevronDown size={15} /></Button>
         </header>
-        <PanelBody tab={panelTab} name={session.name} />
+        <TransfersPanel />
       </motion.section>}
     </AnimatePresence>
 

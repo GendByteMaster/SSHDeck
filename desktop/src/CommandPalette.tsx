@@ -22,7 +22,7 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const visibleCommands = useMemo(
-    () => commands.filter((command) => command.id !== "workbench.commandPalette.open" && command.enabled),
+    () => commands.filter((command) => command.id !== "workbench.commandPalette.open" && command.readiness !== "planned" && command.enabled),
     [commands],
   );
 

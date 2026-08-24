@@ -37,7 +37,7 @@ export function NativeMenu() {
     let activeMenu: Menu | null = null;
 
     async function install() {
-      const visibleCommands = commands.filter((command) => !command.id.startsWith("session.select."));
+      const visibleCommands = commands.filter((command) => command.readiness !== "planned" && !command.id.startsWith("session.select."));
       const groups = categoryOrder
         .map((category) => ({
           category,

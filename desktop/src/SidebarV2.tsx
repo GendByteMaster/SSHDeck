@@ -21,6 +21,7 @@ import { useCommandContextMenu } from "./commands/ContextMenuService";
 import { ServerStatus } from "./serverStatus";
 import { SftpBrowser } from "./SftpBrowser";
 import { useWorkbench } from "./WorkbenchContext";
+import { ActivityFeatureId, productionActivityFeatures } from "./workbenchFeatures";
 
 export type SidebarServer = {
   id: string;
@@ -56,15 +57,21 @@ type SidebarView = "servers" | "sftp";
 
 const clamp = (value: number) => Math.min(520, Math.max(280, value));
 
-const activityItems = [
-  { id: "servers" as const, label: "Servers", icon: Server, enabled: true },
-  { id: "sftp" as const, label: "Remote files", icon: FolderTree, enabled: true },
-  { id: null, label: "Search", icon: Search, enabled: false },
-  { id: null, label: "Port forwarding", icon: Waypoints, enabled: false },
-  { id: null, label: "Sessions", icon: TerminalSquare, enabled: false },
-  { id: null, label: "History", icon: History, enabled: false },
-  { id: null, label: "Transfers", icon: FolderClock, enabled: true },
-];
+const activityIcons: Record<ActivityFeatureId, typeof Server> = {
+  servers: Server,
+  sftp: FolderTree,
+  search: Search,
+  ports: Waypoints,
+  sessions: TerminalSquare,
+  history: History,
+  transfers: FolderClock,
+  settings: Settings,
+};
+
+const activityItems = productionActivityFeatures().map((feature) => ({
+  ...feature,
+  icon: activityIcons[feature.id],
+}));
 
 function statusClass(state: string) {
   switch (state) {
@@ -155,6 +162,14 @@ export function SidebarV2({ servers, favorites, groups, query, statuses, checkin
     void popupCommands(["server.connect", "server.edit", "server.exportOpenSsh", "server.delete"]);
   }
 
+  function activateActivity(id: ActivityFeatureId) {
+    if (id === "servers" || id === "sftp") {
+      setView(id);
+      return;
+    }
+    if (id === "transfers") choosePanel("transfers");
+  }
+
   function beginResize(event: React.PointerEvent<HTMLDivElement>) {
     dragStart.current = { x: event.clientX, width: primaryWidth };
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -192,24 +207,24 @@ export function SidebarV2({ servers, favorites, groups, query, statuses, checkin
     <nav className="flex min-h-0 flex-col items-center border-r border-white/[0.055] bg-[#080a0e] px-1.5 py-2" aria-label="Workbench navigation">
       <div className="mb-2 grid size-9 place-items-center rounded-xl bg-zinc-100 text-[13px] font-bold text-zinc-900 shadow-sm">S</div>
       <div className="flex w-full flex-col items-center gap-1">
-        {activityItems.map(({ id, label, icon: Icon, enabled }, index) => {
-          const active = id !== null ? view === id : label === "Transfers" && panelVisible && panelTab === "transfers";
+        {activityItems.map(({ id, label, icon: Icon }) => {
+          const active = id === "transfers"
+            ? panelVisible && panelTab === "transfers"
+            : (id === "servers" || id === "sftp") && view === id;
           return <button
-            key={`${label}-${index}`}
+            key={id}
             type="button"
-            title={enabled ? label : `${label} · coming soon`}
+            title={label}
             aria-label={label}
             aria-current={active ? "page" : undefined}
-            disabled={!enabled}
-            onClick={() => { if (id) setView(id); else if (label === "Transfers") choosePanel("transfers"); }}
-            className={`relative grid size-10 place-items-center rounded-xl transition-colors ${active ? "bg-[#4f7cff]/12 text-[#89a5ff]" : "text-zinc-600 hover:bg-white/[0.035] hover:text-zinc-400 disabled:cursor-default disabled:opacity-65"}`}
+            onClick={() => activateActivity(id)}
+            className={`relative grid size-10 place-items-center rounded-xl transition-colors ${active ? "bg-[#4f7cff]/12 text-[#89a5ff]" : "text-zinc-600 hover:bg-white/[0.035] hover:text-zinc-400"}`}
           >
             {active && <span className="absolute -left-1.5 h-5 w-0.5 rounded-r-full bg-[#6f91ff]" />}
             <Icon size={18} strokeWidth={1.8} />
           </button>;
         })}
       </div>
-      <div className="mt-auto"><button type="button" title="Settings · coming soon" aria-label="Settings" disabled className="grid size-10 place-items-center rounded-xl text-zinc-600 opacity-65"><Settings size={18} strokeWidth={1.8} /></button></div>
     </nav>
 
     {view === "servers" ? <div className="flex min-h-0 min-w-0 flex-col bg-[#0d1015]/92">

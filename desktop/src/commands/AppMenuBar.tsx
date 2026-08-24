@@ -36,7 +36,7 @@ function isMacOs() {
 }
 
 function visibleInMenu(command: CommandDefinition) {
-  return !command.id.startsWith("session.select.");
+  return command.readiness !== "planned" && !command.id.startsWith("session.select.");
 }
 
 function commandsForGroup(group: MenuGroupId, commands: CommandDefinition[]) {
