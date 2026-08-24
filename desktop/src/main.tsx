@@ -1,5 +1,6 @@
 import ReactDOM from "react-dom/client";
 import "@xterm/xterm/css/xterm.css";
+import "./globals.css";
 import "./design-system.css";
 import "./styles.css";
 import "./sessionLifecycle.css";
@@ -15,7 +16,6 @@ import "./keyboard.css";
 import "./workbench-v4.css";
 import "./workbench-chrome.css";
 import "./workbench-responsive-v4.css";
-import "./workbench-density-v4.css";
 import { App } from "./App";
 import { WorkbenchChrome } from "./WorkbenchChrome";
 import { installKeyboardNavigation } from "./keyboard";
