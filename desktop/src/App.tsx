@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import {
@@ -9,13 +10,8 @@ import {
   EyeOff,
   KeyRound,
   LockKeyhole,
-  Pencil,
-  Plus,
   RefreshCw,
-  Search,
   Server,
-  Star,
-  Trash2,
   X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -24,12 +20,13 @@ import { SidebarV2 } from "./SidebarV2";
 import { ToolsPanel } from "./ToolsPanel";
 import { useServerStatus } from "./serverStatus";
 import {
-  loadSessionHistory,
+  hydrateSessionHistory,
   saveSessionHistory,
   SessionHistoryItem,
   SessionProcessStatus,
   SessionView,
 } from "./sessionLifecycle";
+import { useWorkbench } from "./WorkbenchContext";
 
 type TerminalOutput = { sessionId: string; data: number[] };
 type ServerRecord = {
@@ -67,7 +64,7 @@ export function App() {
   const [sshHosts, setSshHosts] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [tabs, setTabs] = useState<SessionView[]>([]);
-  const [history, setHistory] = useState<SessionHistoryItem[]>(loadSessionHistory);
+  const [history, setHistory] = useState<SessionHistoryItem[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ServerDraft | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>("key");
@@ -89,6 +86,7 @@ export function App() {
   const sessionPasswords = useRef(new Map<string, string>());
   const passwordSent = useRef(new Set<string>());
   const { statuses, checking, refreshServer } = useServerStatus(servers);
+  const { registerAppActions, setSessionSnapshot } = useWorkbench();
 
   useEffect(() => { tabsRef.current = tabs; }, [tabs]);
   useEffect(() => { serversRef.current = servers; }, [servers]);
@@ -109,8 +107,18 @@ export function App() {
     void Promise.all([
       refreshServers(),
       invoke<string[]>("list_hosts").then(setSshHosts),
+      hydrateSessionHistory().then(setHistory),
     ]).catch((value) => setError(String(value)));
   }, []);
+
+  useEffect(() => {
+    registerAppActions({
+      selectSession: (index) => {
+        const tab = tabsRef.current[index];
+        if (tab) setActiveId(tab.id);
+      },
+    });
+  }, [registerAppActions]);
 
   function maybeSendPassword(sessionId: string) {
     if (passwordSent.current.has(sessionId)) return;
@@ -133,7 +141,6 @@ export function App() {
       const text = decoder.decode(chunk, { stream: true });
       const previous = recentOutputText.current.get(payload.sessionId) ?? "";
       recentOutputText.current.set(payload.sessionId, (previous + text).slice(-1200));
-
       const entry = terminals.current.get(payload.sessionId);
       if (entry) entry.terminal.write(chunk);
       else {
@@ -174,7 +181,6 @@ export function App() {
       terminal.onData((data) => void invoke("terminal_write", { sessionId: activeId, data }));
       entry = { terminal, fit, element };
       terminals.current.set(activeId, entry);
-
       const queued = pendingOutput.current.get(activeId) ?? [];
       for (const chunk of queued) terminal.write(chunk);
       pendingOutput.current.delete(activeId);
@@ -183,25 +189,16 @@ export function App() {
 
     terminalHost.current.appendChild(entry.element);
     entry.fit.fit();
-    void invoke("terminal_resize", {
-      sessionId: activeId,
-      rows: entry.terminal.rows,
-      cols: entry.terminal.cols,
-    });
+    void invoke("terminal_resize", { sessionId: activeId, rows: entry.terminal.rows, cols: entry.terminal.cols });
     entry.terminal.focus();
 
     const resize = () => {
       entry?.fit.fit();
-      if (entry) {
-        void invoke("terminal_resize", {
-          sessionId: activeId,
-          rows: entry.terminal.rows,
-          cols: entry.terminal.cols,
-        });
-      }
+      if (entry) void invoke("terminal_resize", { sessionId: activeId, rows: entry.terminal.rows, cols: entry.terminal.cols });
     };
-    window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
+    let unlistenResize: (() => void) | null = null;
+    void getCurrentWindow().onResized(resize).then((unlisten) => { unlistenResize = unlisten; });
+    return () => unlistenResize?.();
   }, [activeId]);
 
   async function startSession(server: ServerRecord, autoReconnect = true, reconnectAttempts = 0) {
@@ -232,13 +229,12 @@ export function App() {
       sessionServer.current.delete(tab.id);
       passwordSent.current.delete(tab.id);
       await invoke("terminal_close", { sessionId: tab.id }).catch(() => undefined);
-
       let attempt = tab.reconnectAttempts;
       while (attempt < 3) {
         attempt += 1;
         if (!tabsRef.current.some((item) => item.id === tab.id)) return;
         setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, state: "reconnecting", reconnectAttempts: attempt } : item));
-        await new Promise((resolve) => window.setTimeout(resolve, 1000 * (2 ** (attempt - 1))));
+        await new Promise((resolve) => setTimeout(resolve, 1000 * (2 ** (attempt - 1))));
         const server = serversRef.current.find((item) => item.id === tab.serverId);
         if (!server || !tabsRef.current.some((item) => item.id === tab.id)) return;
         try {
@@ -270,32 +266,17 @@ export function App() {
             return;
           }
           const endedState: "disconnected" | "failed" = status.state === "failed" ? "failed" : "disconnected";
-          setTabs((current) => current.map((item) => item.id === tab.id ? {
-            ...item,
-            state: endedState,
-            durationMs: status.durationMs,
-            exitCode: status.exitCode,
-            signal: status.signal,
-          } : item));
-          appendHistory({
-            serverId: tab.serverId,
-            serverName: tab.name,
-            state: endedState,
-            atMs: status.endedAtMs ?? Date.now(),
-            durationMs: status.durationMs,
-            exitCode: status.exitCode,
-          });
-          if (endedState === "failed" && tab.autoReconnect && tab.reconnectAttempts < 3) {
-            void autoReconnect({ ...tab, state: "failed", durationMs: status.durationMs, exitCode: status.exitCode, signal: status.signal });
-          }
+          setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, state: endedState, durationMs: status.durationMs, exitCode: status.exitCode, signal: status.signal } : item));
+          appendHistory({ serverId: tab.serverId, serverName: tab.name, state: endedState, atMs: status.endedAtMs ?? Date.now(), durationMs: status.durationMs, exitCode: status.exitCode });
+          if (endedState === "failed" && tab.autoReconnect && tab.reconnectAttempts < 3) void autoReconnect({ ...tab, state: "failed", durationMs: status.durationMs, exitCode: status.exitCode, signal: status.signal });
         } catch (value) {
           if (!cancelled) setError(`Could not read session state: ${String(value)}`);
         }
       }));
     }
     void pollSessions();
-    const timer = window.setInterval(() => void pollSessions(), 1000);
-    return () => { cancelled = true; window.clearInterval(timer); };
+    const timer = setInterval(() => void pollSessions(), 1000);
+    return () => { cancelled = true; clearInterval(timer); };
   }, []);
 
   const filtered = useMemo(() => {
@@ -314,6 +295,15 @@ export function App() {
   }, [nonFavorites]);
   const activeTab = tabs.find((tab) => tab.id === activeId) ?? null;
   const activeStatus = activeTab ? statuses[activeTab.serverId] ?? null : null;
+
+  useEffect(() => {
+    setSessionSnapshot({
+      id: activeTab?.id ?? null,
+      name: activeTab?.name ?? "No active session",
+      state: activeTab?.state ?? "idle",
+      latency: activeStatus?.latencyMs != null ? `${activeStatus.latencyMs} ms` : null,
+    });
+  }, [activeStatus?.latencyMs, activeTab?.id, activeTab?.name, activeTab?.state, setSessionSnapshot]);
 
   async function connect(server: ServerRecord) {
     const existing = tabs.find((tab) => tab.serverId === server.id);
@@ -369,17 +359,11 @@ export function App() {
     event.preventDefault();
     if (!draft) return;
     try {
-      const server = {
-        ...draft,
-        identityFile: authMode === "password" ? null : draft.identityFile,
-        lastConnectedAt: draft.lastConnectedAt ?? null,
-      };
+      const server = { ...draft, identityFile: authMode === "password" ? null : draft.identityFile, lastConnectedAt: draft.lastConnectedAt ?? null };
       const saved = await invoke<ServerRecord>("save_server", { server });
       if (authMode === "password") {
         if (draftPassword) sessionPasswords.current.set(saved.id, draftPassword);
-      } else {
-        sessionPasswords.current.delete(saved.id);
-      }
+      } else sessionPasswords.current.delete(saved.id);
       setDraft(null);
       setDraftPassword("");
       await refreshServers();
@@ -391,7 +375,6 @@ export function App() {
     const serverId = deleteServer.id;
     const doomedTabs = tabsRef.current.filter((tab) => tab.serverId === serverId);
     const doomedIds = new Set(doomedTabs.map((tab) => tab.id));
-
     try {
       await Promise.all(doomedTabs.map(async (tab) => {
         await invoke("terminal_close", { sessionId: tab.id }).catch(() => undefined);
@@ -403,7 +386,6 @@ export function App() {
         passwordSent.current.delete(tab.id);
         reconnecting.current.delete(tab.id);
       }));
-
       const remainingTabs = tabsRef.current.filter((tab) => tab.serverId !== serverId);
       tabsRef.current = remainingTabs;
       setTabs(remainingTabs);
@@ -412,14 +394,12 @@ export function App() {
         terminalHost.current?.replaceChildren();
         return remainingTabs.at(-1)?.id ?? null;
       });
-
       setHistory((current) => {
         const next = current.filter((item) => item.serverId !== serverId);
         saveSessionHistory(next);
         return next;
       });
       sessionPasswords.current.delete(serverId);
-
       await invoke("delete_server", { id: serverId });
       setDeleteServer(null);
       await refreshServers();
@@ -452,7 +432,7 @@ export function App() {
 
   async function copyExport(server: ServerRecord) {
     try {
-      await navigator.clipboard.writeText(sshSnippet(server));
+      await invoke("copy_text", { text: sshSnippet(server) });
       setExportServer(null);
     } catch (value) { setError(`Could not copy to clipboard: ${String(value)}`); }
   }
@@ -469,63 +449,15 @@ export function App() {
     setDraft({ ...server });
   }
 
-  function ServerRow({ server }: { server: ServerRecord }) {
-    const status = statuses[server.id];
-    const state = checking.has(server.id) ? "checking" : status?.state ?? "unknown";
-    return <div className="server-row-wrap">
-      <button className="server-row" onClick={() => void connect(server)}>
-        <span className={`status-dot ${state}`} /><Server size={15} />
-        <span className="server-copy">
-          <strong>{server.name}</strong>
-          <small>{server.user ? `${server.user}@` : ""}{server.host}:{server.port}{status?.latencyMs != null ? ` · ${status.latencyMs} ms` : ""}</small>
-        </span>
-      </button>
-      <div className="row-actions">
-        <button title="Favorite" onClick={() => void toggleFavorite(server)}><Star size={13} fill={server.favorite ? "currentColor" : "none"} /></button>
-        <button title="Export OpenSSH snippet" onClick={() => setExportServer(server)}><Copy size={13} /></button>
-        <button title="Edit" onClick={() => openEditServer(server)}><Pencil size={13} /></button>
-        <button title="Delete" onClick={() => setDeleteServer(server)}><Trash2 size={13} /></button>
-      </div>
-    </div>;
-  }
-
   return <main className="app-shell">
-    <SidebarV2
-      favorites={favorites}
-      groups={groups}
-      query={query}
-      statuses={statuses}
-      checking={checking}
-      onQueryChange={setQuery}
-      onAdd={openNewServer}
-      onImport={() => setImportOpen(true)}
-      onConnect={(server) => void connect(server)}
-      onFavorite={(server) => void toggleFavorite(server)}
-      onExport={(server) => setExportServer(server)}
-      onEdit={openEditServer}
-      onDelete={(server) => setDeleteServer(server)}
-    />
+    <SidebarV2 favorites={favorites} groups={groups} query={query} statuses={statuses} checking={checking} onQueryChange={setQuery} onAdd={openNewServer} onImport={() => setImportOpen(true)} onConnect={(server) => void connect(server)} onFavorite={(server) => void toggleFavorite(server)} onExport={(server) => setExportServer(server)} onEdit={openEditServer} onDelete={(server) => setDeleteServer(server)} />
 
     <section className="workspace">
-      <header className="topbar"><div className="tabs">{tabs.map((tab) => <button key={tab.id} className={`tab ${activeId === tab.id ? "active" : ""}`} onClick={() => setActiveId(tab.id)}>
-        <span className={`session-dot ${tab.state}`} /><span>{tab.name}</span>
-        <RefreshCw size={12} className={tab.state === "reconnecting" ? "spin" : ""} onClick={(event) => { event.stopPropagation(); void reconnect(tab); }} />
-        <X size={13} onClick={(event) => { event.stopPropagation(); void closeTab(tab.id); }} />
-      </button>)}</div></header>
+      <header className="topbar"><div className="tabs">{tabs.map((tab) => <button key={tab.id} className={`tab ${activeId === tab.id ? "active" : ""}`} onClick={() => setActiveId(tab.id)}><span className={`session-dot ${tab.state}`} /><span>{tab.name}</span><RefreshCw size={12} className={tab.state === "reconnecting" ? "spin" : ""} onClick={(event) => { event.stopPropagation(); void reconnect(tab); }} /><X size={13} onClick={(event) => { event.stopPropagation(); void closeTab(tab.id); }} /></button>)}</div></header>
       {activeId ? <div ref={terminalHost} className="terminal-host" /> : <EmptyWorkspaceV2 onAddServer={openNewServer} onImport={() => setImportOpen(true)} />}
     </section>
 
-    <ToolsPanel
-      servers={servers}
-      activeSession={activeTab}
-      activeServerId={activeTab?.serverId ?? null}
-      activeStatus={activeStatus}
-      statusChecking={activeTab ? checking.has(activeTab.serverId) : false}
-      sessionHistory={history}
-      onToggleAutoReconnect={() => { if (activeTab) toggleAutoReconnect(activeTab.id); }}
-      onRefreshStatus={async () => { if (activeTab) await refreshServer(activeTab.serverId); }}
-      onError={setError}
-    />
+    <ToolsPanel servers={servers} activeSession={activeTab} activeServerId={activeTab?.serverId ?? null} activeStatus={activeStatus} statusChecking={activeTab ? checking.has(activeTab.serverId) : false} sessionHistory={history} onToggleAutoReconnect={() => { if (activeTab) toggleAutoReconnect(activeTab.id); }} onRefreshStatus={async () => { if (activeTab) await refreshServer(activeTab.serverId); }} onError={setError} />
 
     {draft && <div className="modal-backdrop"><form className="modal server-editor" onSubmit={(event) => void save(event)}>
       <div className="modal-head"><div><h2>{draft.id ? "Edit Server" : "Add Server"}</h2><p>Connection metadata is local. Passwords are kept in memory only for this app session.</p></div><button type="button" className="icon-button" onClick={() => setDraft(null)}><X size={18} /></button></div>
@@ -533,38 +465,19 @@ export function App() {
       <label>Host<input required value={draft.host} onChange={(event) => setDraft({ ...draft, host: event.target.value })} placeholder="203.0.113.10" /></label>
       <div className="form-grid"><label>User<input value={draft.user ?? ""} onChange={(event) => setDraft({ ...draft, user: event.target.value || null })} placeholder="deploy" /></label><label>Port<input type="number" min="1" max="65535" value={draft.port} onChange={(event) => setDraft({ ...draft, port: Number(event.target.value) })} /></label></div>
       <label>Authentication</label>
-      <div className="auth-switch">
-        <button type="button" className={authMode === "key" ? "active" : ""} onClick={() => setAuthMode("key")}><KeyRound size={15} /> SSH Key</button>
-        <button type="button" className={authMode === "password" ? "active" : ""} onClick={() => setAuthMode("password")}><LockKeyhole size={15} /> Password</button>
-      </div>
-      {authMode === "key" ? <>
-        <label>Identity file<input value={draft.identityFile ?? ""} onChange={(event) => setDraft({ ...draft, identityFile: event.target.value || null })} placeholder="~/.ssh/id_ed25519" /></label>
-        <p className="auth-note">SSHDeck passes only the path to OpenSSH. Key contents are never copied.</p>
-      </> : <>
-        <label>Password<div className="password-input"><input type={showPassword ? "text" : "password"} value={draftPassword} onChange={(event) => setDraftPassword(event.target.value)} placeholder="Enter password for this app session" /><button type="button" onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff size={15} /> : <Eye size={15} />}</button></div></label>
-        <p className="auth-note">Not written to servers.json. SSHDeck sends it only after OpenSSH emits a password prompt.</p>
-      </>}
+      <div className="auth-switch"><button type="button" className={authMode === "key" ? "active" : ""} onClick={() => setAuthMode("key")}><KeyRound size={15} /> SSH Key</button><button type="button" className={authMode === "password" ? "active" : ""} onClick={() => setAuthMode("password")}><LockKeyhole size={15} /> Password</button></div>
+      {authMode === "key" ? <><label>Identity file<input value={draft.identityFile ?? ""} onChange={(event) => setDraft({ ...draft, identityFile: event.target.value || null })} placeholder="~/.ssh/id_ed25519" /></label><p className="auth-note">SSHDeck passes only the path to OpenSSH. Key contents are never copied.</p></> : <><label>Password<div className="password-input"><input type={showPassword ? "text" : "password"} value={draftPassword} onChange={(event) => setDraftPassword(event.target.value)} placeholder="Enter password for this app session" /><button type="button" onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff size={15} /> : <Eye size={15} />}</button></div></label><p className="auth-note">Not written to servers.json. SSHDeck sends it only after OpenSSH emits a password prompt.</p></>}
       <label>Group<input value={draft.group ?? ""} onChange={(event) => setDraft({ ...draft, group: event.target.value || null })} placeholder="Production" /></label>
       <label className="check"><input type="checkbox" checked={draft.favorite} onChange={(event) => setDraft({ ...draft, favorite: event.target.checked })} /> Favorite</label>
       {draft.sourceAlias && <p>Imported from OpenSSH alias <code>{draft.sourceAlias}</code>. Connections keep using that alias.</p>}
       <div className="modal-actions"><button type="button" className="secondary" onClick={() => setDraft(null)}>Cancel</button><button className="primary" type="submit">Save server</button></div>
     </form></div>}
 
-    {deleteServer && <div className="modal-backdrop"><div className="modal confirm-modal">
-      <div className="modal-head"><div><h2>Delete server?</h2><p><strong>{deleteServer.name}</strong> will be removed from SSHDeck. Your OpenSSH config and keys are untouched.</p></div><button className="icon-button" onClick={() => setDeleteServer(null)}><X size={16} /></button></div>
-      <div className="modal-actions"><button className="secondary" onClick={() => setDeleteServer(null)}>Cancel</button><button className="danger" onClick={() => void confirmDelete()}>Delete server</button></div>
-    </div></div>}
+    {deleteServer && <div className="modal-backdrop"><div className="modal confirm-modal"><div className="modal-head"><div><h2>Delete server?</h2><p><strong>{deleteServer.name}</strong> will be removed from SSHDeck. Your OpenSSH config and keys are untouched.</p></div><button className="icon-button" onClick={() => setDeleteServer(null)}><X size={16} /></button></div><div className="modal-actions"><button className="secondary" onClick={() => setDeleteServer(null)}>Cancel</button><button className="danger" onClick={() => void confirmDelete()}>Delete server</button></div></div></div>}
 
-    {importOpen && <div className="modal-backdrop"><div className="modal import-modal">
-      <div className="modal-head"><div><h2>Import from OpenSSH</h2><p>SSHDeck resolves each alias with <code>ssh -G</code>.</p></div><button className="icon-button" onClick={() => setImportOpen(false)}><X size={16} /></button></div>
-      <div className="import-list">{sshHosts.map((alias) => <button key={alias} className="import-row" onClick={() => void importAlias(alias)}><Server size={15} /><span>{alias}</span><Download size={14} /></button>)}{sshHosts.length === 0 && <div className="empty">No literal Host aliases found in ~/.ssh/config.</div>}</div>
-    </div></div>}
+    {importOpen && <div className="modal-backdrop"><div className="modal import-modal"><div className="modal-head"><div><h2>Import from OpenSSH</h2><p>SSHDeck resolves each alias with <code>ssh -G</code>.</p></div><button className="icon-button" onClick={() => setImportOpen(false)}><X size={16} /></button></div><div className="import-list">{sshHosts.map((alias) => <button key={alias} className="import-row" onClick={() => void importAlias(alias)}><Server size={15} /><span>{alias}</span><Download size={14} /></button>)}{sshHosts.length === 0 && <div className="empty">No literal Host aliases found in ~/.ssh/config.</div>}</div></div></div>}
 
-    {exportServer && <div className="modal-backdrop"><div className="modal">
-      <div className="modal-head"><div><h2>Export to OpenSSH</h2><p>SSHDeck never edits ~/.ssh/config automatically.</p></div><button className="icon-button" onClick={() => setExportServer(null)}><X size={16} /></button></div>
-      <pre className="config-snippet">{sshSnippet(exportServer)}</pre>
-      <div className="modal-actions"><button className="secondary" onClick={() => setExportServer(null)}>Close</button><button className="primary" onClick={() => void copyExport(exportServer)}><Copy size={14} /> Copy</button></div>
-    </div></div>}
+    {exportServer && <div className="modal-backdrop"><div className="modal"><div className="modal-head"><div><h2>Export to OpenSSH</h2><p>SSHDeck never edits ~/.ssh/config automatically.</p></div><button className="icon-button" onClick={() => setExportServer(null)}><X size={16} /></button></div><pre className="config-snippet">{sshSnippet(exportServer)}</pre><div className="modal-actions"><button className="secondary" onClick={() => setExportServer(null)}>Close</button><button className="primary" onClick={() => void copyExport(exportServer)}><Copy size={14} /> Copy</button></div></div></div>}
 
     {error && <div className="toast"><span>{error}</span><button onClick={() => setError(null)}><X size={14} /></button></div>}
   </main>;
