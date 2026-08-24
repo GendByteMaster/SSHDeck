@@ -25,6 +25,8 @@ The following areas already have real behavior behind the UI:
 - session tabs, close, reconnect, next/previous/select shortcuts;
 - Sessions workspace with All / Active / Issues filters, focus, reconnect, close, diagnostics, and auto-reconnect controls;
 - shared logical session state across tabs, Activity Bar, Inspector, menu, Command Palette, and shortcuts;
+- full persisted History workspace with search, server/state filters, timestamps, duration, exit/signal diagnostics, reconnect, and clear-history controls;
+- bounded local session-history retention of 200 records with backward-compatible persisted fields;
 - server status, latency, auth state and uptime probes;
 - SFTP Remote Files: listing, navigation, mkdir, rename, safe delete, upload/download;
 - SFTP staged diagnostics;
@@ -46,9 +48,9 @@ Current production state:
 - Remote Files — implemented;
 - Port Forwarding — implemented;
 - Sessions — implemented;
+- History — implemented;
 - Transfers — implemented;
 - Search — planned and hidden until implemented;
-- History — planned and hidden until implemented;
 - Settings — planned and hidden until implemented.
 
 The Workbench no longer advertises planned product areas as clickable production controls.
@@ -67,7 +69,7 @@ Current production state:
 The Inspector is functional and currently contains several real product features:
 
 - Server Status;
-- Connection History;
+- compact recent Connection History;
 - Quick Commands;
 - Port Forwarding summary backed by the shared tunnel provider.
 
@@ -94,7 +96,7 @@ A control is considered complete only if all of the following are true:
 
 ### Feature readiness vs runtime availability
 
-SSHDeck now separates these concepts:
+SSHDeck separates these concepts:
 
 ```ts
 type FeatureReadiness = "ready" | "experimental" | "planned";
@@ -167,10 +169,13 @@ App runtime adapter
 Consumers
 ├── Session tabs
 ├── Sessions Activity workspace
+├── History Activity workspace
 ├── Inspector
 ├── Workbench status snapshot
 └── CommandService / menu / shortcuts
 ```
+
+Phase 3 keeps persisted history inside `SessionProvider`. The History workspace is a consumer only and starts no polling or process lifecycle. History persistence is bounded to 200 records; new records may contain `startedAtMs` and `signal`, while old workspace files remain compatible because those fields are optional.
 
 Views must not create independent tunnel or session polling/restart loops.
 
@@ -223,18 +228,26 @@ Acceptance delivered:
 - `SessionProvider` owns logical session state while `App` remains the native PTY/xterm runtime adapter;
 - no duplicate session polling loop was introduced.
 
-### Phase 3 — Full History workspace
+### Phase 3 — Full History workspace ✅
 
-Expand the existing recent Inspector history into a dedicated view.
+Completed in PR #12.
 
-Required behavior:
+Acceptance delivered:
 
-- full persisted session history;
-- server/state filtering;
-- exit code/signal/duration timestamps;
-- reconnect from a historical server entry when available;
-- bounded retention or explicit clearing policy;
-- export may be added as JSON/CSV after the core flow.
+- dedicated Activity Bar History workspace;
+- persisted local session history;
+- search plus server/state filtering;
+- ended and started timestamps;
+- duration, exit-code and signal diagnostics;
+- reconnect/focus through the existing server connection flow when the server entry still exists;
+- reconnect control disabled when the historical server record no longer exists;
+- explicit two-step Clear History action;
+- bounded retention increased from 30 to 200 recent records;
+- backward-compatible optional `startedAtMs` and `signal` persistence fields;
+- Rust regression coverage proves legacy history records still deserialize;
+- History remains a consumer of `SessionProvider` and introduces no second polling loop.
+
+JSON/CSV export remains optional follow-up work rather than part of the core Phase 3 gate.
 
 ### Phase 4 — Structured Logs / Diagnostics panel
 
@@ -316,10 +329,10 @@ Completed:
 1. `refactor/workbench-feature-registry` — PR #9 ✅
 2. `feat/ports-workspace` — PR #10 ✅
 3. `feat/sessions-workspace` — PR #11 ✅
+4. `feat/history-workspace` — PR #12 ✅
 
 Next:
 
-4. `feat/history-workspace`
 5. `feat/workbench-logs`
 6. `feat/workbench-search`
 7. `feat/settings-workspace`
@@ -338,6 +351,6 @@ This milestone is complete only when:
 - no clickable control is a no-op;
 - no `ready` command opens placeholder-only content;
 - menu/Command Palette/shortcuts/buttons resolve through shared command paths;
-- existing SSH/SFTP/transfers/diagnostics/tunnel/session flows remain green;
+- existing SSH/SFTP/transfers/diagnostics/tunnel/session/history flows remain green;
 - Windows runtime smoke test passes;
 - README describes only shipped behavior.
