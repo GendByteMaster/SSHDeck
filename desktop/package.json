@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test:ui-contracts": "node scripts/check-ui-contracts.mjs",
     "build": "tsc && vite build",
+    "check": "npm run test:ui-contracts && npm run build",
     "tauri": "tauri"
   },
   "dependencies": {
