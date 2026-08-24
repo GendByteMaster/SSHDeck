@@ -5,6 +5,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use sshdeck::registry::ServerRecord;
+use sshdeck::workspace::WorkspaceStore;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,6 +48,14 @@ fn checked_at() -> u64 {
         .unwrap_or_default()
 }
 
+fn diagnostic_timeout_seconds() -> u64 {
+    WorkspaceStore::load_default()
+        .and_then(|store| store.load())
+        .map(|workspace| workspace.settings.diagnostic_timeout_seconds)
+        .unwrap_or(8)
+        .clamp(2, 30)
+}
+
 fn target(server: &ServerRecord) -> String {
     match &server.user {
         Some(user) if !user.is_empty() => format!("{user}@{}", server.host),
@@ -54,12 +63,12 @@ fn target(server: &ServerRecord) -> String {
     }
 }
 
-fn append_ssh_target(command: &mut Command, server: &ServerRecord) {
+fn append_ssh_target(command: &mut Command, server: &ServerRecord, timeout_seconds: u64) {
     command
         .arg("-o")
         .arg("BatchMode=yes")
         .arg("-o")
-        .arg("ConnectTimeout=8")
+        .arg(format!("ConnectTimeout={timeout_seconds}"))
         .arg("-o")
         .arg("ConnectionAttempts=1");
 
@@ -75,7 +84,7 @@ fn append_ssh_target(command: &mut Command, server: &ServerRecord) {
     command.arg(target(server));
 }
 
-fn append_sftp_target(command: &mut Command, server: &ServerRecord) {
+fn append_sftp_target(command: &mut Command, server: &ServerRecord, timeout_seconds: u64) {
     command
         .arg("-q")
         .arg("-b")
@@ -83,7 +92,7 @@ fn append_sftp_target(command: &mut Command, server: &ServerRecord) {
         .arg("-o")
         .arg("BatchMode=yes")
         .arg("-o")
-        .arg("ConnectTimeout=8")
+        .arg(format!("ConnectTimeout={timeout_seconds}"))
         .arg("-o")
         .arg("ConnectionAttempts=1");
 
@@ -232,7 +241,7 @@ fn classify_sftp_failure(detail: &str) -> Failure {
     }
 }
 
-fn tcp_probe(server: &ServerRecord) -> SftpDiagnosticStep {
+fn tcp_probe(server: &ServerRecord, timeout_seconds: u64) -> SftpDiagnosticStep {
     if server.source_alias.is_some() {
         return SftpDiagnosticStep {
             id: "tcp".to_owned(),
@@ -268,7 +277,7 @@ fn tcp_probe(server: &ServerRecord) -> SftpDiagnosticStep {
         };
     }
 
-    let timeout = Duration::from_secs(3);
+    let timeout = Duration::from_secs(timeout_seconds.clamp(2, 30));
     let mut last_error = None;
     for socket in addresses {
         match TcpStream::connect_timeout(&socket, timeout) {
@@ -294,10 +303,10 @@ fn tcp_probe(server: &ServerRecord) -> SftpDiagnosticStep {
     }
 }
 
-fn ssh_probe(server: &ServerRecord) -> Result<SftpDiagnosticStep, Failure> {
+fn ssh_probe(server: &ServerRecord, timeout_seconds: u64) -> Result<SftpDiagnosticStep, Failure> {
     let started = Instant::now();
     let mut command = Command::new("ssh");
-    append_ssh_target(&mut command, server);
+    append_ssh_target(&mut command, server, timeout_seconds);
     command.arg("printf '__SSHDECK_DIAG_OK__\\n'");
 
     let output = command.output().map_err(|error| Failure {
@@ -323,10 +332,10 @@ fn ssh_probe(server: &ServerRecord) -> Result<SftpDiagnosticStep, Failure> {
     Err(failure)
 }
 
-fn sftp_probe(server: &ServerRecord) -> Result<SftpDiagnosticStep, Failure> {
+fn sftp_probe(server: &ServerRecord, timeout_seconds: u64) -> Result<SftpDiagnosticStep, Failure> {
     let started = Instant::now();
     let mut command = Command::new("sftp");
-    append_sftp_target(&mut command, server);
+    append_sftp_target(&mut command, server, timeout_seconds);
     let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -401,11 +410,12 @@ fn skipped_step(id: &str, label: &str, detail: &str) -> SftpDiagnosticStep {
 
 pub(super) fn sftp_diagnose(server_id: String) -> Result<SftpDiagnosticResult, String> {
     let server = super::find_server(&server_id)?;
+    let timeout_seconds = diagnostic_timeout_seconds();
     let started = Instant::now();
     let checked_at = checked_at();
-    let mut steps = vec![tcp_probe(&server)];
+    let mut steps = vec![tcp_probe(&server, timeout_seconds)];
 
-    match ssh_probe(&server) {
+    match ssh_probe(&server, timeout_seconds) {
         Ok(step) => steps.push(step),
         Err(failure) => {
             steps.push(failed_step("ssh", "SSH handshake & authentication", &failure));
@@ -427,7 +437,7 @@ pub(super) fn sftp_diagnose(server_id: String) -> Result<SftpDiagnosticResult, S
         }
     }
 
-    match sftp_probe(&server) {
+    match sftp_probe(&server, timeout_seconds) {
         Ok(step) => {
             steps.push(step);
             Ok(SftpDiagnosticResult {
