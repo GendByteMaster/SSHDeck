@@ -2,9 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { Activity, Cable, History, Play, Plus, RefreshCw, RotateCw, Square, TerminalSquare, Trash2, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { classifyCommand, CommandRisk, riskLabel } from "./commandSafety";
+import { useCommandContextMenu } from "./commands/ContextMenuService";
 import { formatUptime, ServerStatus } from "./serverStatus";
 import { formatDuration, SessionHistoryItem, SessionView } from "./sessionLifecycle";
-import { loadTunnelAutoRestart, saveTunnelAutoRestart, TunnelProcessStatus, tunnelStateLabel } from "./tunnelHealth";
+import { TunnelProcessStatus, tunnelStateLabel } from "./tunnelHealth";
+import { useWorkbench } from "./WorkbenchContext";
 
 type Server = { id: string; name: string; group: string | null };
 type QuickCommand = { id: string; name: string; command: string; serverId: string | null; group: string | null };
@@ -18,6 +20,7 @@ type Tunnel = {
   localPort: number;
   remoteHost: string | null;
   remotePort: number | null;
+  autoRestart: boolean;
 };
 type WorkspaceData = { quickCommands: QuickCommand[]; tunnels: Tunnel[] };
 type PendingCommand = { item: QuickCommand; risk: CommandRisk };
@@ -47,32 +50,71 @@ function sessionLabel(session: SessionView | null) {
 export function ToolsPanel({ servers, activeSession, activeServerId, activeStatus, statusChecking, sessionHistory, onToggleAutoReconnect, onRefreshStatus, onError }: Props) {
   const [data, setData] = useState<WorkspaceData>(emptyWorkspace);
   const [tunnelStatuses, setTunnelStatuses] = useState<Record<string, TunnelProcessStatus | null>>({});
-  const [autoRestart, setAutoRestart] = useState<Record<string, boolean>>(loadTunnelAutoRestart);
   const [quickOpen, setQuickOpen] = useState(false);
   const [tunnelOpen, setTunnelOpen] = useState(false);
   const [pendingCommand, setPendingCommand] = useState<PendingCommand | null>(null);
+  const dataRef = useRef<WorkspaceData>(emptyWorkspace);
   const restarting = useRef(new Set<string>());
   const restartAttempts = useRef(new Map<string, number>());
   const activeServer = servers.find((server) => server.id === activeServerId) ?? null;
   const sessionUsable = activeSession?.state === "active";
+  const { registerAppActions, selectedTunnel, setSelectedTunnel } = useWorkbench();
+  const popupCommands = useCommandContextMenu();
+
+  useEffect(() => { dataRef.current = data; }, [data]);
 
   async function refresh() {
-    setData(await invoke<WorkspaceData>("workspace_load"));
+    const next = await invoke<WorkspaceData>("workspace_load");
+    dataRef.current = next;
+    setData(next);
   }
 
   useEffect(() => {
     void refresh().catch((value) => onError(String(value)));
   }, []);
 
+  async function startTunnel(id: string) {
+    try {
+      const status = await invoke<TunnelProcessStatus>("start_tunnel", { id });
+      restartAttempts.current.set(id, 0);
+      setTunnelStatuses((current) => ({ ...current, [id]: status }));
+      if (selectedTunnel.id === id) setSelectedTunnel({ id, name: selectedTunnel.name, state: status.state });
+    } catch (value) {
+      onError(String(value));
+    }
+  }
+
+  async function stopTunnel(id: string) {
+    try {
+      const status = await invoke<TunnelProcessStatus>("stop_tunnel", { id });
+      setTunnelStatuses((current) => ({ ...current, [id]: status }));
+      if (selectedTunnel.id === id) setSelectedTunnel({ id, name: selectedTunnel.name, state: status.state });
+    } catch (value) {
+      onError(String(value));
+    }
+  }
+
+  useEffect(() => {
+    registerAppActions({
+      startTunnel: (id) => { void startTunnel(id); },
+      stopTunnel: (id) => { void stopTunnel(id); },
+    });
+  }, [registerAppActions, selectedTunnel.id, selectedTunnel.name, setSelectedTunnel]);
+
   async function restartTunnel(id: string) {
-    if (restarting.current.has(id) || !autoRestart[id]) return;
+    if (restarting.current.has(id)) return;
+    const tunnel = dataRef.current.tunnels.find((item) => item.id === id);
+    if (!tunnel?.autoRestart) return;
+
     restarting.current.add(id);
     try {
       let attempt = restartAttempts.current.get(id) ?? 0;
-      while (attempt < 3 && autoRestart[id]) {
+      while (attempt < 3) {
+        const currentTunnel = dataRef.current.tunnels.find((item) => item.id === id);
+        if (!currentTunnel?.autoRestart) return;
         attempt += 1;
         restartAttempts.current.set(id, attempt);
-        await new Promise((resolve) => window.setTimeout(resolve, 1000 * (2 ** (attempt - 1))));
+        await new Promise((resolve) => setTimeout(resolve, 1000 * (2 ** (attempt - 1))));
         try {
           const status = await invoke<TunnelProcessStatus>("start_tunnel", { id });
           setTunnelStatuses((current) => ({ ...current, [id]: status }));
@@ -95,7 +137,7 @@ export function ToolsPanel({ servers, activeSession, activeServerId, activeStatu
           if (cancelled) return;
           setTunnelStatuses((current) => ({ ...current, [tunnel.id]: status }));
           if (status?.state === "running" && status.durationMs >= 30_000) restartAttempts.current.set(tunnel.id, 0);
-          if (status?.state === "failed" && autoRestart[tunnel.id] && (restartAttempts.current.get(tunnel.id) ?? 0) < 3) {
+          if (status?.state === "failed" && tunnel.autoRestart && (restartAttempts.current.get(tunnel.id) ?? 0) < 3) {
             void restartTunnel(tunnel.id);
           }
         } catch (value) {
@@ -104,9 +146,22 @@ export function ToolsPanel({ servers, activeSession, activeServerId, activeStatu
       }));
     }
     void pollTunnels();
-    const timer = window.setInterval(() => void pollTunnels(), 1000);
-    return () => { cancelled = true; window.clearInterval(timer); };
-  }, [data.tunnels, autoRestart]);
+    const timer = setInterval(() => void pollTunnels(), 1000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [data.tunnels]);
+
+  useEffect(() => {
+    if (!selectedTunnel.id) return;
+    const tunnel = data.tunnels.find((item) => item.id === selectedTunnel.id);
+    if (!tunnel) {
+      setSelectedTunnel({ id: null, name: "No tunnel selected", state: "stopped" });
+      return;
+    }
+    const state = tunnelStatuses[tunnel.id]?.state ?? "stopped";
+    if (selectedTunnel.name !== tunnel.name || selectedTunnel.state !== state) {
+      setSelectedTunnel({ id: tunnel.id, name: tunnel.name, state });
+    }
+  }, [data.tunnels, selectedTunnel.id, selectedTunnel.name, selectedTunnel.state, setSelectedTunnel, tunnelStatuses]);
 
   const visibleCommands = useMemo(() => data.quickCommands.filter((item) => {
     if (item.serverId) return item.serverId === activeServerId;
@@ -135,45 +190,56 @@ export function ToolsPanel({ servers, activeSession, activeServerId, activeStatu
   }
 
   async function deleteCommand(id: string) {
-    try { setData(await invoke<WorkspaceData>("delete_quick_command", { id })); }
-    catch (value) { onError(String(value)); }
-  }
-
-  async function toggleTunnel(id: string) {
     try {
-      const status = tunnelStatuses[id];
-      const running = status?.state === "running" || status?.state === "stopping";
-      const next = await invoke<TunnelProcessStatus>(running ? "stop_tunnel" : "start_tunnel", { id });
-      if (!running) restartAttempts.current.set(id, 0);
-      setTunnelStatuses((current) => ({ ...current, [id]: next }));
+      const next = await invoke<WorkspaceData>("delete_quick_command", { id });
+      dataRef.current = next;
+      setData(next);
     } catch (value) { onError(String(value)); }
   }
 
-  function toggleTunnelAutoRestart(id: string) {
-    setAutoRestart((current) => {
-      const next = { ...current, [id]: !current[id] };
-      saveTunnelAutoRestart(next);
-      if (!next[id]) restartAttempts.current.set(id, 0);
-      return next;
-    });
+  async function toggleTunnel(id: string) {
+    const status = tunnelStatuses[id];
+    const running = status?.state === "running" || status?.state === "stopping";
+    if (running) await stopTunnel(id);
+    else await startTunnel(id);
+  }
+
+  async function toggleTunnelAutoRestart(tunnel: Tunnel) {
+    try {
+      const next = await invoke<WorkspaceData>("save_tunnel", {
+        tunnel: { ...tunnel, autoRestart: !tunnel.autoRestart },
+      });
+      dataRef.current = next;
+      setData(next);
+      if (tunnel.autoRestart) restartAttempts.current.set(tunnel.id, 0);
+    } catch (value) {
+      onError(String(value));
+    }
   }
 
   async function deleteTunnel(id: string) {
     try {
-      setData(await invoke<WorkspaceData>("delete_tunnel", { id }));
+      const next = await invoke<WorkspaceData>("delete_tunnel", { id });
+      dataRef.current = next;
+      setData(next);
       setTunnelStatuses((current) => {
-        const next = { ...current };
-        delete next[id];
-        return next;
-      });
-      setAutoRestart((current) => {
-        const next = { ...current };
-        delete next[id];
-        saveTunnelAutoRestart(next);
-        return next;
+        const copy = { ...current };
+        delete copy[id];
+        return copy;
       });
       restartAttempts.current.delete(id);
     } catch (value) { onError(String(value)); }
+  }
+
+  function selectTunnel(item: Tunnel) {
+    const state = tunnelStatuses[item.id]?.state ?? "stopped";
+    setSelectedTunnel({ id: item.id, name: item.name, state });
+  }
+
+  function showTunnelContextMenu(item: Tunnel, event: React.MouseEvent<HTMLDivElement>) {
+    event.preventDefault();
+    selectTunnel(item);
+    void popupCommands(["tunnel.start", "tunnel.stop"]);
   }
 
   const statusState = statusChecking ? "checking" : activeStatus?.state ?? "unknown";
@@ -235,13 +301,19 @@ export function ToolsPanel({ servers, activeSession, activeServerId, activeStatu
           const server = servers.find((value) => value.id === item.serverId);
           const attempts = restartAttempts.current.get(item.id) ?? 0;
           const dotState = status?.state === "running" ? "active" : status?.state === "failed" ? "failed" : status?.state === "stopping" ? "reconnecting" : "disconnected";
-          return <div className={`tunnel-item tunnel-${status?.state ?? "stopped"}`} key={item.id}>
+          const selected = selectedTunnel.id === item.id;
+          return <div
+            className={`tunnel-item tunnel-${status?.state ?? "stopped"} ${selected ? "ring-1 ring-[#6f91ff]/35" : ""}`}
+            key={item.id}
+            onPointerDown={() => selectTunnel(item)}
+            onContextMenu={(event) => showTunnelContextMenu(item, event)}
+          >
             <button className="tool-run" onClick={() => void toggleTunnel(item.id)}>{running ? <Square size={12} /> : <Play size={12} />}<span><strong>{item.name}</strong><small>{item.kind.toUpperCase()} · {server?.name ?? "Missing server"} · :{item.localPort}</small></span></button>
             <div className="tunnel-health">
               <span className={`session-dot ${dotState}`} /><strong>{tunnelStateLabel(status)}</strong>
               {status && <small>{formatDuration(status.durationMs)}{status.exitCode != null ? ` · exit ${status.exitCode}` : ""}</small>}
             </div>
-            <button className={`tunnel-auto-restart ${autoRestart[item.id] ? "enabled" : ""}`} onClick={() => toggleTunnelAutoRestart(item.id)} title="Toggle automatic tunnel restart"><RotateCw size={12} />{autoRestart[item.id] ? `Auto ${attempts}/3` : "Auto off"}</button>
+            <button className={`tunnel-auto-restart ${item.autoRestart ? "enabled" : ""}`} onClick={() => void toggleTunnelAutoRestart(item)} title="Toggle automatic tunnel restart"><RotateCw size={12} />{item.autoRestart ? `Auto ${attempts}/3` : "Auto off"}</button>
             <button className="tool-delete" onClick={() => void deleteTunnel(item.id)}><Trash2 size={12} /></button>
             {status?.reason && <p className="tunnel-error" title={status.reason}>{status.reason}</p>}
           </div>;
@@ -251,8 +323,8 @@ export function ToolsPanel({ servers, activeSession, activeServerId, activeStatu
       <p className="status-note">Managed tunnels use non-interactive OpenSSH with keepalives. Failed tunnels retain exit diagnostics and can restart up to 3 times with 1s / 2s / 4s backoff.</p>
     </section>
 
-    {quickOpen && <QuickCommandDialog servers={servers} activeServerId={activeServerId} onClose={() => setQuickOpen(false)} onSaved={(next) => { setData(next); setQuickOpen(false); }} onError={onError} />}
-    {tunnelOpen && <TunnelDialog servers={servers} activeServerId={activeServerId} onClose={() => setTunnelOpen(false)} onSaved={(next) => { setData(next); setTunnelOpen(false); }} onError={onError} />}
+    {quickOpen && <QuickCommandDialog servers={servers} activeServerId={activeServerId} onClose={() => setQuickOpen(false)} onSaved={(next) => { dataRef.current = next; setData(next); setQuickOpen(false); }} onError={onError} />}
+    {tunnelOpen && <TunnelDialog servers={servers} activeServerId={activeServerId} onClose={() => setTunnelOpen(false)} onSaved={(next) => { dataRef.current = next; setData(next); setTunnelOpen(false); }} onError={onError} />}
     {pendingCommand && <DangerousCommandDialog pending={pendingCommand} serverName={activeServer?.name ?? "server"} onClose={() => setPendingCommand(null)} onConfirm={() => void executeCommand(pendingCommand.item)} />}
   </aside>;
 }
@@ -311,6 +383,7 @@ function TunnelDialog({ servers, activeServerId, onClose, onSaved, onError }: { 
         id: "", name, serverId, kind, bindHost: bindHost || null, localPort,
         remoteHost: kind === "dynamic" ? null : remoteHost || null,
         remotePort: kind === "dynamic" ? null : remotePort,
+        autoRestart: false,
       } });
       onSaved(next);
     } catch (value) { onError(String(value)); }
