@@ -15,6 +15,12 @@ export type ServerSelection = {
   name: string;
 };
 
+export type TunnelSelection = {
+  id: string | null;
+  name: string;
+  state: string;
+};
+
 type NativeLayout = {
   primaryVisible: boolean;
   secondaryVisible: boolean;
@@ -33,6 +39,7 @@ type WorkbenchState = {
   primaryWidth: number;
   session: SessionSnapshot;
   selectedServer: ServerSelection;
+  selectedTunnel: TunnelSelection;
 };
 
 type WorkbenchActions = {
@@ -43,6 +50,7 @@ type WorkbenchActions = {
   choosePanel: (tab: PanelTab) => void;
   setSessionSnapshot: (snapshot: SessionSnapshot) => void;
   setSelectedServer: (selection: ServerSelection) => void;
+  setSelectedTunnel: (selection: TunnelSelection) => void;
   requestAddServer: () => void;
   requestImportOpenSsh: () => void;
   requestFocusServerSearch: () => void;
@@ -55,6 +63,8 @@ type WorkbenchActions = {
   requestEditSelectedServer: () => void;
   requestExportSelectedServer: () => void;
   requestDeleteSelectedServer: () => void;
+  requestStartSelectedTunnel: () => void;
+  requestStopSelectedTunnel: () => void;
   registerAppActions: (actions: AppActions) => void;
 };
 
@@ -71,6 +81,8 @@ export type AppActions = {
   editServer?: (serverId: string) => void;
   exportServer?: (serverId: string) => void;
   deleteServer?: (serverId: string) => void;
+  startTunnel?: (tunnelId: string) => void;
+  stopTunnel?: (tunnelId: string) => void;
 };
 
 type WorkbenchContextValue = WorkbenchState & WorkbenchActions;
@@ -83,6 +95,7 @@ const defaults: WorkbenchState = {
   primaryWidth: 320,
   session: { id: null, name: "No active session", state: "idle", latency: null },
   selectedServer: { id: null, name: "No server selected" },
+  selectedTunnel: { id: null, name: "No tunnel selected", state: "stopped" },
 };
 
 const WorkbenchContext = createContext<WorkbenchContextValue | null>(null);
@@ -103,6 +116,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [primaryWidth, setPrimaryWidthState] = useState(defaults.primaryWidth);
   const [session, setSessionSnapshot] = useState<SessionSnapshot>(defaults.session);
   const [selectedServer, setSelectedServer] = useState<ServerSelection>(defaults.selectedServer);
+  const [selectedTunnel, setSelectedTunnel] = useState<TunnelSelection>(defaults.selectedTunnel);
   const appActions = useRef<AppActions>({});
   const [hydrated, setHydrated] = useState(false);
 
@@ -165,6 +179,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const requestDeleteSelectedServer = useCallback(() => {
     if (selectedServer.id) appActions.current.deleteServer?.(selectedServer.id);
   }, [selectedServer.id]);
+  const requestStartSelectedTunnel = useCallback(() => {
+    if (selectedTunnel.id) appActions.current.startTunnel?.(selectedTunnel.id);
+  }, [selectedTunnel.id]);
+  const requestStopSelectedTunnel = useCallback(() => {
+    if (selectedTunnel.id) appActions.current.stopTunnel?.(selectedTunnel.id);
+  }, [selectedTunnel.id]);
 
   const value = useMemo<WorkbenchContextValue>(() => ({
     primaryVisible,
@@ -174,6 +194,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     primaryWidth,
     session,
     selectedServer,
+    selectedTunnel,
     setPrimaryVisible,
     setSecondaryVisible,
     setPanelVisible,
@@ -181,6 +202,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     choosePanel,
     setSessionSnapshot,
     setSelectedServer,
+    setSelectedTunnel,
     registerAppActions,
     requestAddServer,
     requestImportOpenSsh,
@@ -194,6 +216,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     requestEditSelectedServer,
     requestExportSelectedServer,
     requestDeleteSelectedServer,
+    requestStartSelectedTunnel,
+    requestStopSelectedTunnel,
   }), [
     choosePanel,
     panelTab,
@@ -213,8 +237,11 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     requestPreviousSession,
     requestReconnectSession,
     requestSelectSession,
+    requestStartSelectedTunnel,
+    requestStopSelectedTunnel,
     secondaryVisible,
     selectedServer,
+    selectedTunnel,
     session,
     setPrimaryWidth,
   ]);
