@@ -59,10 +59,87 @@ jobs:
         working-directory: desktop
         run: npm install
 
+      - name: Check UI contracts
+        working-directory: desktop
+        run: npm run test:ui-contracts
+
       - name: Build frontend
         working-directory: desktop
         run: npm run build
 
+      - name: Test Tauri backend
+        working-directory: desktop/src-tauri
+        run: cargo test
+
       - name: Check Tauri backend
         working-directory: desktop/src-tauri
         run: cargo check
+
+  windows-desktop:
+    name: Windows desktop gate
+    runs-on: windows-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate Windows PowerShell 5.1 smoke preflight
+        shell: powershell
+        run: .\scripts\windows-runtime-smoke.ps1 -PreflightOnly
+
+      - name: Install frontend dependencies
+        working-directory: desktop
+        run: npm install
+
+      - name: Check UI contracts
+        working-directory: desktop
+        run: npm run test:ui-contracts
+
+      - name: Build frontend
+        working-directory: desktop
+        run: npm run build
+
+      - name: Test Tauri backend
+        working-directory: desktop/src-tauri
+        run: cargo test
+
+      - name: Check Tauri backend
+        working-directory: desktop/src-tauri
+        run: cargo check
+
+      - name: Build Windows desktop binary
+        working-directory: desktop
+        run: npm run tauri -- build --debug --no-bundle
+
+      - name: Smoke launch Windows desktop
+        shell: pwsh
+        working-directory: desktop
+        run: |
+          $exe = Join-Path $PWD "src-tauri\target\debug\sshdeck-desktop.exe"
+          if (-not (Test-Path $exe)) {
+            Get-ChildItem -Path (Join-Path $PWD "src-tauri\target\debug") -Filter "*.exe" -ErrorAction SilentlyContinue
+            throw "SSHDeck Windows executable was not produced at $exe"
+          }
+
+          $process = Start-Process -FilePath $exe -PassThru
+          try {
+            Start-Sleep -Seconds 8
+            if ($process.HasExited) {
+              throw "SSHDeck exited during startup smoke with code $($process.ExitCode)"
+            }
+            Write-Host "SSHDeck remained alive through the Windows startup smoke."
+          }
+          finally {
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+            }
+          }

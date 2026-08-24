@@ -14,6 +14,8 @@ const key = (value: string) => (event: KeyboardEvent) => event.key.toLowerCase()
 const bindings: Binding[] = [
   { command: "workbench.commandPalette.open", matches: (event) => mod(event) && event.shiftKey && key("p")(event), allowInEditable: true, allowInTerminal: true },
   { command: "workbench.shortcuts.open", matches: (event) => event.key === "F1", allowInEditable: true, allowInTerminal: true },
+  { command: "workbench.view.search", matches: (event) => mod(event) && event.shiftKey && key("f")(event), allowInEditable: true, allowInTerminal: true },
+  { command: "workbench.view.settings", matches: (event) => mod(event) && !event.shiftKey && !event.altKey && event.key === ",", allowInEditable: true, allowInTerminal: true },
   { command: "server.add", matches: (event) => mod(event) && event.shiftKey && key("n")(event) },
   { command: "server.focusSearch", matches: (event) => mod(event) && event.shiftKey && key("k")(event) },
   { command: "session.next", matches: (event) => event.ctrlKey && !event.shiftKey && !event.altKey && event.key === "Tab", allowInTerminal: true },
@@ -44,7 +46,7 @@ function consume(event: KeyboardEvent) {
 }
 
 export function KeybindingService() {
-  const { execute } = useCommands();
+  const { execute, getCommand } = useCommands();
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -56,6 +58,9 @@ export function KeybindingService() {
         if (editable && !binding.allowInEditable) return;
         if (terminal && !binding.allowInTerminal) return;
 
+        const command = getCommand(binding.command);
+        if (!command || command.readiness === "planned" || !command.enabled) return;
+
         consume(event);
         void execute(binding.command);
         return;
@@ -64,7 +69,7 @@ export function KeybindingService() {
 
     window.addEventListener("keydown", onKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
-  }, [execute]);
+  }, [execute, getCommand]);
 
   return null;
 }

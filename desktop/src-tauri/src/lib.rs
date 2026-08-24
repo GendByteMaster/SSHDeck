@@ -1,4 +1,7 @@
 mod status;
+mod sftp;
+mod sftp_diagnostics;
+mod transfers;
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -12,7 +15,7 @@ use sshdeck::config::SshConfig;
 use sshdeck::registry::{ServerRecord, ServerRegistry};
 use sshdeck::workspace::{
     QuickCommand, SessionHistoryRecord, TunnelKind, TunnelRecord, WorkbenchLayout, WorkspaceData,
-    WorkspaceStore,
+    WorkspaceSettings, WorkspaceStore,
 };
 use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
@@ -415,10 +418,25 @@ fn workspace_save_layout(layout: WorkbenchLayout) -> Result<WorkspaceData, Strin
 }
 
 #[tauri::command]
+fn workspace_save_settings(
+    mut settings: WorkspaceSettings,
+    transfers: State<'_, transfers::TransferManager>,
+) -> Result<WorkspaceData, String> {
+    settings.migrate().map_err(|error| error.to_string())?;
+    settings.validate().map_err(|error| error.to_string())?;
+    let store = WorkspaceStore::load_default().map_err(|error| error.to_string())?;
+    let mut data = store.load().map_err(|error| error.to_string())?;
+    data.settings = settings.clone();
+    store.save(&data).map_err(|error| error.to_string())?;
+    transfers.set_max_concurrent(settings.transfer_concurrency);
+    Ok(data)
+}
+
+#[tauri::command]
 fn workspace_save_session_history(
     mut items: Vec<SessionHistoryRecord>,
 ) -> Result<WorkspaceData, String> {
-    items.truncate(30);
+    items.truncate(200);
     let store = WorkspaceStore::load_default().map_err(|error| error.to_string())?;
     let mut data = store.load().map_err(|error| error.to_string())?;
     data.session_history = items;
@@ -446,6 +464,16 @@ fn write_clipboard_process(program: &str, args: &[&str], text: &str) -> Result<(
     } else {
         Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
     }
+}
+
+#[tauri::command]
+fn sftp_diagnose(
+    server_id: String,
+    app: AppHandle,
+) -> Result<sftp_diagnostics::SftpDiagnosticResult, String> {
+    let result = sftp_diagnostics::sftp_diagnose(server_id)?;
+    let _ = app.emit("sshdeck://sftp-diagnostic", result.clone());
+    Ok(result)
 }
 
 #[tauri::command]
@@ -754,6 +782,8 @@ pub fn run() {
     tauri::Builder::default()
         .manage(Sessions::default())
         .manage(Tunnels::default())
+        .manage(transfers::TransferManager::from_workspace())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             list_hosts,
             list_servers,
@@ -768,6 +798,7 @@ pub fn run() {
             terminal_close,
             workspace_load,
             workspace_save_layout,
+            workspace_save_settings,
             workspace_save_session_history,
             copy_text,
             save_quick_command,
@@ -778,7 +809,20 @@ pub fn run() {
             start_tunnel,
             stop_tunnel,
             tunnel_status,
-            active_tunnels
+            active_tunnels,
+            sftp::sftp_list_directory,
+            sftp::sftp_create_directory,
+            sftp::sftp_rename,
+            sftp::sftp_remove,
+            sftp::sftp_upload,
+            sftp::sftp_download,
+            sftp_diagnose,
+            transfers::sftp_start_upload,
+            transfers::sftp_start_download,
+            transfers::sftp_transfer_list,
+            transfers::sftp_cancel_transfer,
+            transfers::sftp_retry_transfer,
+            transfers::sftp_clear_finished
         ])
         .run(tauri::generate_context!())
         .expect("error while running SSHDeck");

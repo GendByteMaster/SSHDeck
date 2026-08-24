@@ -4,6 +4,10 @@ import { CommandCategory, CommandDefinition, useCommands } from "./CommandServic
 
 const categoryOrder: CommandCategory[] = ["Servers", "Sessions", "Tunnels", "Workbench", "Panel"];
 
+function isMacOs() {
+  return /Macintosh|Mac OS X/.test(navigator.userAgent);
+}
+
 function accelerator(shortcut?: string) {
   if (!shortcut) return undefined;
   return shortcut
@@ -25,11 +29,15 @@ export function NativeMenu() {
   const { commands, execute } = useCommands();
 
   useEffect(() => {
+    // Windows and Linux use the integrated Workbench menu. macOS keeps the
+    // platform-native application menu where users expect it.
+    if (!isMacOs()) return;
+
     let disposed = false;
     let activeMenu: Menu | null = null;
 
     async function install() {
-      const visibleCommands = commands.filter((command) => !command.id.startsWith("session.select."));
+      const visibleCommands = commands.filter((command) => command.readiness !== "planned" && !command.id.startsWith("session.select."));
       const groups = categoryOrder
         .map((category) => ({
           category,

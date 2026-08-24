@@ -8,7 +8,7 @@ export function useCommandContextMenu() {
   return useCallback(async (ids: CommandId[]) => {
     const commands = ids
       .map((id) => getCommand(id))
-      .filter((command): command is NonNullable<typeof command> => Boolean(command));
+      .filter((command): command is NonNullable<typeof command> => Boolean(command) && command?.readiness !== "planned");
 
     if (commands.length === 0) return;
 

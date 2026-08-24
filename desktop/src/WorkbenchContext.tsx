@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
-export type PanelTab = "terminal" | "ports" | "logs" | "transfers";
+export type PanelTab = "ports" | "logs" | "transfers";
+export type PrimaryView = "servers" | "sftp" | "search" | "ports" | "sessions" | "history" | "settings";
 
 export type SessionSnapshot = {
   id: string | null;
@@ -29,7 +30,10 @@ type NativeLayout = {
   primaryWidth: number;
 };
 
-type NativeWorkspace = { layout?: NativeLayout };
+type NativeWorkspace = {
+  layout?: NativeLayout;
+  settings?: { restoreWorkspaceLayout?: boolean };
+};
 
 type WorkbenchState = {
   primaryVisible: boolean;
@@ -37,6 +41,7 @@ type WorkbenchState = {
   panelVisible: boolean;
   panelTab: PanelTab;
   primaryWidth: number;
+  primaryView: PrimaryView;
   session: SessionSnapshot;
   selectedServer: ServerSelection;
   selectedTunnel: TunnelSelection;
@@ -47,6 +52,7 @@ type WorkbenchActions = {
   setSecondaryVisible: (visible: boolean) => void;
   setPanelVisible: (visible: boolean) => void;
   setPrimaryWidth: (width: number) => void;
+  showPrimaryView: (view: PrimaryView) => void;
   choosePanel: (tab: PanelTab) => void;
   setSessionSnapshot: (snapshot: SessionSnapshot) => void;
   setSelectedServer: (selection: ServerSelection) => void;
@@ -54,6 +60,10 @@ type WorkbenchActions = {
   requestAddServer: () => void;
   requestImportOpenSsh: () => void;
   requestFocusServerSearch: () => void;
+  requestShowSearchWorkspace: () => void;
+  requestShowSessionsWorkspace: () => void;
+  requestShowHistoryWorkspace: () => void;
+  requestShowSettingsWorkspace: () => void;
   requestSelectSession: (index: number) => void;
   requestNextSession: () => void;
   requestPreviousSession: () => void;
@@ -91,8 +101,9 @@ const defaults: WorkbenchState = {
   primaryVisible: true,
   secondaryVisible: true,
   panelVisible: false,
-  panelTab: "terminal",
+  panelTab: "transfers",
   primaryWidth: 320,
+  primaryView: "servers",
   session: { id: null, name: "No active session", state: "idle", latency: null },
   selectedServer: { id: null, name: "No server selected" },
   selectedTunnel: { id: null, name: "No tunnel selected", state: "stopped" },
@@ -101,7 +112,7 @@ const defaults: WorkbenchState = {
 const WorkbenchContext = createContext<WorkbenchContextValue | null>(null);
 
 function isPanelTab(value: string): value is PanelTab {
-  return value === "terminal" || value === "ports" || value === "logs" || value === "transfers";
+  return value === "ports" || value === "logs" || value === "transfers";
 }
 
 function clampPrimaryWidth(value: number) {
@@ -114,17 +125,19 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [panelVisible, setPanelVisible] = useState(defaults.panelVisible);
   const [panelTab, setPanelTab] = useState<PanelTab>(defaults.panelTab);
   const [primaryWidth, setPrimaryWidthState] = useState(defaults.primaryWidth);
+  const [primaryView, setPrimaryView] = useState<PrimaryView>(defaults.primaryView);
   const [session, setSessionSnapshot] = useState<SessionSnapshot>(defaults.session);
   const [selectedServer, setSelectedServer] = useState<ServerSelection>(defaults.selectedServer);
   const [selectedTunnel, setSelectedTunnel] = useState<TunnelSelection>(defaults.selectedTunnel);
   const appActions = useRef<AppActions>({});
+  const skipInitialLayoutSave = useRef(true);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     void invoke<NativeWorkspace>("workspace_load")
       .then((workspace) => {
-        if (cancelled || !workspace.layout) return;
+        if (cancelled || !workspace.layout || workspace.settings?.restoreWorkspaceLayout === false) return;
         const layout = workspace.layout;
         setPrimaryVisible(layout.primaryVisible);
         setSecondaryVisible(layout.secondaryVisible);
@@ -138,6 +151,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!hydrated) return;
+    if (skipInitialLayoutSave.current) {
+      skipInitialLayoutSave.current = false;
+      return;
+    }
     const layout: NativeLayout = {
       primaryVisible,
       secondaryVisible,
@@ -151,6 +168,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const registerAppActions = useCallback((actions: AppActions) => {
     appActions.current = { ...appActions.current, ...actions };
   }, []);
+  const showPrimaryView = useCallback((view: PrimaryView) => {
+    setPrimaryVisible(true);
+    setPrimaryView(view);
+  }, []);
   const choosePanel = useCallback((tab: PanelTab) => {
     setPanelTab(tab);
     setPanelVisible(true);
@@ -161,7 +182,14 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   const requestAddServer = useCallback(() => appActions.current.addServer?.(), []);
   const requestImportOpenSsh = useCallback(() => appActions.current.importOpenSsh?.(), []);
-  const requestFocusServerSearch = useCallback(() => appActions.current.focusServerSearch?.(), []);
+  const requestFocusServerSearch = useCallback(() => {
+    showPrimaryView("servers");
+    appActions.current.focusServerSearch?.();
+  }, [showPrimaryView]);
+  const requestShowSearchWorkspace = useCallback(() => showPrimaryView("search"), [showPrimaryView]);
+  const requestShowSessionsWorkspace = useCallback(() => showPrimaryView("sessions"), [showPrimaryView]);
+  const requestShowHistoryWorkspace = useCallback(() => showPrimaryView("history"), [showPrimaryView]);
+  const requestShowSettingsWorkspace = useCallback(() => showPrimaryView("settings"), [showPrimaryView]);
   const requestSelectSession = useCallback((index: number) => appActions.current.selectSession?.(index), []);
   const requestNextSession = useCallback(() => appActions.current.nextSession?.(), []);
   const requestPreviousSession = useCallback(() => appActions.current.previousSession?.(), []);
@@ -192,6 +220,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     panelVisible,
     panelTab,
     primaryWidth,
+    primaryView,
     session,
     selectedServer,
     selectedTunnel,
@@ -199,6 +228,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     setSecondaryVisible,
     setPanelVisible,
     setPrimaryWidth,
+    showPrimaryView,
     choosePanel,
     setSessionSnapshot,
     setSelectedServer,
@@ -207,6 +237,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     requestAddServer,
     requestImportOpenSsh,
     requestFocusServerSearch,
+    requestShowSearchWorkspace,
+    requestShowSessionsWorkspace,
+    requestShowHistoryWorkspace,
+    requestShowSettingsWorkspace,
     requestSelectSession,
     requestNextSession,
     requestPreviousSession,
@@ -222,6 +256,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     choosePanel,
     panelTab,
     panelVisible,
+    primaryView,
     primaryVisible,
     primaryWidth,
     registerAppActions,
@@ -237,6 +272,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     requestPreviousSession,
     requestReconnectSession,
     requestSelectSession,
+    requestShowHistoryWorkspace,
+    requestShowSearchWorkspace,
+    requestShowSessionsWorkspace,
+    requestShowSettingsWorkspace,
     requestStartSelectedTunnel,
     requestStopSelectedTunnel,
     secondaryVisible,
@@ -244,6 +283,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     selectedTunnel,
     session,
     setPrimaryWidth,
+    showPrimaryView,
   ]);
 
   const rootClassName = [

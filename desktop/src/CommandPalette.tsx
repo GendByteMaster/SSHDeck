@@ -15,22 +15,40 @@ function commandIcon(id: CommandId) {
   return Command;
 }
 
+function firstEnabledIndex(items: CommandDefinition[]) {
+  const index = items.findIndex((item) => item.enabled);
+  return index >= 0 ? index : 0;
+}
+
 export function CommandPalette() {
   const { commands, paletteOpen, setPaletteOpen, execute } = useCommands();
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const visibleCommands = useMemo(
-    () => commands.filter((command) => command.id !== "workbench.commandPalette.open" && command.enabled),
+    () => commands.filter((command) => command.id !== "workbench.commandPalette.open" && command.readiness !== "planned"),
     [commands],
   );
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return visibleCommands;
-    return visibleCommands.filter((item) => `${item.title} ${item.description} ${item.category}`.toLowerCase().includes(needle));
+    return visibleCommands.filter((item) => `${item.title} ${item.description} ${item.category} ${item.availabilityReason ?? ""}`.toLowerCase().includes(needle));
   }, [query, visibleCommands]);
+
+  useEffect(() => {
+    if (!paletteOpen) return;
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    requestAnimationFrame(() => inputRef.current?.focus());
+    return () => {
+      const previous = previousFocusRef.current;
+      requestAnimationFrame(() => {
+        if (previous?.isConnected) previous.focus();
+      });
+    };
+  }, [paletteOpen]);
 
   useEffect(() => {
     if (!paletteOpen) {
@@ -38,16 +56,25 @@ export function CommandPalette() {
       setActiveIndex(0);
       return;
     }
-    requestAnimationFrame(() => inputRef.current?.focus());
-  }, [paletteOpen]);
-
-  useEffect(() => {
-    if (activeIndex >= filtered.length) setActiveIndex(Math.max(0, filtered.length - 1));
-  }, [activeIndex, filtered.length]);
+    if (!filtered[activeIndex]?.enabled) setActiveIndex(firstEnabledIndex(filtered));
+  }, [activeIndex, filtered, paletteOpen]);
 
   async function run(item: CommandDefinition) {
+    if (!item.enabled) return;
     setPaletteOpen(false);
     await execute(item.id);
+  }
+
+  function moveActive(direction: 1 | -1) {
+    if (filtered.length === 0) return;
+    let index = activeIndex;
+    for (let offset = 0; offset < filtered.length; offset += 1) {
+      index = (index + direction + filtered.length) % filtered.length;
+      if (filtered[index]?.enabled) {
+        setActiveIndex(index);
+        return;
+      }
+    }
   }
 
   function onInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
@@ -56,11 +83,11 @@ export function CommandPalette() {
       setPaletteOpen(false);
     } else if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActiveIndex((value) => Math.min(filtered.length - 1, value + 1));
+      moveActive(1);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      setActiveIndex((value) => Math.max(0, value - 1));
-    } else if (event.key === "Enter" && filtered[activeIndex]) {
+      moveActive(-1);
+    } else if (event.key === "Enter" && filtered[activeIndex]?.enabled) {
       event.preventDefault();
       void run(filtered[activeIndex]);
     }
@@ -101,21 +128,23 @@ export function CommandPalette() {
           <div className="max-h-[420px] overflow-y-auto p-2 [scrollbar-width:thin]">
             {filtered.map((item, index) => {
               const Icon = commandIcon(item.id);
-              const active = index === activeIndex;
+              const active = item.enabled && index === activeIndex;
               return (
                 <button
                   key={item.id}
                   type="button"
-                  onMouseEnter={() => setActiveIndex(index)}
+                  disabled={!item.enabled}
+                  title={item.enabled ? item.description : item.availabilityReason ?? item.description}
+                  onMouseEnter={() => { if (item.enabled) setActiveIndex(index); }}
                   onClick={() => void run(item)}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${active ? "bg-[#4f7cff]/12" : "hover:bg-white/[0.035]"}`}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${active ? "bg-[#4f7cff]/12" : "enabled:hover:bg-white/[0.035]"}`}
                 >
                   <span className={`grid size-8 shrink-0 place-items-center rounded-lg border ${active ? "border-[#6f91ff]/20 bg-[#4f7cff]/10 text-[#9bb1ff]" : "border-white/[0.055] bg-white/[0.025] text-zinc-500"}`}>
                     <Icon size={15} strokeWidth={1.8} />
                   </span>
                   <span className="min-w-0 flex-1">
                     <strong className="block truncate text-[12.5px] font-medium text-zinc-200">{item.title}</strong>
-                    <small className="mt-0.5 block truncate text-[10.5px] text-zinc-600">{item.category} · {item.description}</small>
+                    <small className="mt-0.5 block truncate text-[10.5px] text-zinc-600">{item.enabled ? `${item.category} · ${item.description}` : `${item.category} · ${item.availabilityReason ?? item.description}`}</small>
                   </span>
                   {item.shortcut && <kbd className="shrink-0 rounded-md border border-white/[0.06] bg-white/[0.025] px-2 py-1 text-[10px] text-zinc-600">{item.shortcut}</kbd>}
                 </button>

@@ -17,15 +17,11 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyWorkspaceV2 } from "./product-v2";
 import { SessionTabs } from "./SessionTabs";
 import { SidebarV2 } from "./SidebarV2";
+import { useSettings } from "./SettingsContext";
 import { ToolsPanel } from "./ToolsPanel";
 import { useServerStatus } from "./serverStatus";
-import {
-  hydrateSessionHistory,
-  saveSessionHistory,
-  SessionHistoryItem,
-  SessionProcessStatus,
-  SessionView,
-} from "./sessionLifecycle";
+import { SessionProcessStatus, SessionView } from "./sessionLifecycle";
+import { useSessions } from "./SessionContext";
 import { useWorkbench } from "./WorkbenchContext";
 
 type TerminalOutput = { sessionId: string; data: number[] };
@@ -63,9 +59,6 @@ export function App() {
   const [servers, setServers] = useState<ServerRecord[]>([]);
   const [sshHosts, setSshHosts] = useState<string[]>([]);
   const [query, setQuery] = useState("");
-  const [tabs, setTabs] = useState<SessionView[]>([]);
-  const [history, setHistory] = useState<SessionHistoryItem[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ServerDraft | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>("key");
   const [draftPassword, setDraftPassword] = useState("");
@@ -74,6 +67,7 @@ export function App() {
   const [exportServer, setExportServer] = useState<ServerRecord | null>(null);
   const [deleteServer, setDeleteServer] = useState<ServerRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { settings, loading: settingsLoading } = useSettings();
 
   const terminals = useRef(new Map<string, TerminalEntry>());
   const terminalHost = useRef<HTMLDivElement | null>(null);
@@ -86,20 +80,27 @@ export function App() {
   const sessionServer = useRef(new Map<string, string>());
   const sessionPasswords = useRef(new Map<string, string>());
   const passwordSent = useRef(new Set<string>());
+  const settingsRef = useRef(settings);
+  const settingsLoadingRef = useRef(settingsLoading);
   const { statuses, checking, refreshServer } = useServerStatus(servers);
+  const {
+    sessions: tabs,
+    setSessions: setTabs,
+    activeId,
+    setActiveId,
+    history,
+    appendHistory,
+    updateHistory,
+    toggleAutoReconnect,
+    registerRuntimeActions,
+  } = useSessions();
   const { registerAppActions, setSessionSnapshot } = useWorkbench();
 
   useEffect(() => { tabsRef.current = tabs; }, [tabs]);
   useEffect(() => { serversRef.current = servers; }, [servers]);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
-
-  function appendHistory(item: Omit<SessionHistoryItem, "id">) {
-    setHistory((current) => {
-      const next = [{ ...item, id: `${item.atMs}-${Math.random().toString(36).slice(2, 8)}` }, ...current].slice(0, 30);
-      saveSessionHistory(next);
-      return next;
-    });
-  }
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
+  useEffect(() => { settingsLoadingRef.current = settingsLoading; }, [settingsLoading]);
 
   async function refreshServers() {
     const next = await invoke<ServerRecord[]>("list_servers");
@@ -111,7 +112,6 @@ export function App() {
     void Promise.all([
       refreshServers(),
       invoke<string[]>("list_hosts").then(setSshHosts),
-      hydrateSessionHistory().then(setHistory),
     ]).catch((value) => setError(String(value)));
   }, []);
 
@@ -196,7 +196,7 @@ export function App() {
     return () => unlistenResize?.();
   }, [activeId]);
 
-  async function startSession(server: ServerRecord, autoReconnect = true, reconnectAttempts = 0) {
+  async function startSession(server: ServerRecord, autoReconnect = settingsRef.current.autoReconnectDefault, reconnectAttempts = 0) {
     const id = await invoke<string>("terminal_start_server", { serverId: server.id });
     sessionServer.current.set(id, server.id);
     maybeSendPassword(id);
@@ -239,7 +239,7 @@ export function App() {
             activeIdRef.current = replacement.id;
             setActiveId(replacement.id);
           }
-          appendHistory({ serverId: server.id, serverName: server.name, state: "reconnected", atMs: Date.now(), durationMs: 0, exitCode: null });
+          appendHistory({ serverId: server.id, serverName: server.name, state: "reconnected", atMs: Date.now(), startedAtMs: replacement.startedAtMs, durationMs: 0, exitCode: null, signal: null });
           void refreshServer(server.id).catch(() => undefined);
           return;
         } catch (value) {
@@ -265,7 +265,7 @@ export function App() {
           }
           const endedState: "disconnected" | "failed" = status.state === "failed" ? "failed" : "disconnected";
           setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, state: endedState, durationMs: status.durationMs, exitCode: status.exitCode, signal: status.signal } : item));
-          appendHistory({ serverId: tab.serverId, serverName: tab.name, state: endedState, atMs: status.endedAtMs ?? Date.now(), durationMs: status.durationMs, exitCode: status.exitCode });
+          appendHistory({ serverId: tab.serverId, serverName: tab.name, state: endedState, atMs: status.endedAtMs ?? Date.now(), startedAtMs: status.startedAtMs, durationMs: status.durationMs, exitCode: status.exitCode, signal: status.signal });
           if (endedState === "failed" && tab.autoReconnect && tab.reconnectAttempts < 3) void autoReconnect({ ...tab, state: "failed", durationMs: status.durationMs, exitCode: status.exitCode, signal: status.signal });
         } catch (value) {
           if (!cancelled) setError(`Could not read session state: ${String(value)}`);
@@ -304,6 +304,10 @@ export function App() {
   }, [activeStatus?.latencyMs, activeTab?.id, activeTab?.name, activeTab?.state, setSessionSnapshot]);
 
   async function connect(server: ServerRecord) {
+    if (settingsLoadingRef.current) {
+      setError("Workspace settings are still loading. Try the connection again in a moment.");
+      return;
+    }
     const existing = tabsRef.current.find((tab) => tab.serverId === server.id);
     if (existing) {
       activeIdRef.current = existing.id;
@@ -355,7 +359,7 @@ export function App() {
     recentOutputText.current.delete(id);
     sessionServer.current.delete(id);
     passwordSent.current.delete(id);
-    if (tab) appendHistory({ serverId: tab.serverId, serverName: tab.name, state: "closed", atMs: Date.now(), durationMs: tab.durationMs, exitCode: tab.exitCode });
+    if (tab) appendHistory({ serverId: tab.serverId, serverName: tab.name, state: "closed", atMs: Date.now(), startedAtMs: tab.startedAtMs, durationMs: tab.durationMs, exitCode: tab.exitCode, signal: tab.signal });
     setTabs((value) => {
       const next = value.filter((item) => item.id !== id);
       tabsRef.current = next;
@@ -370,37 +374,6 @@ export function App() {
 
   useEffect(() => {
     registerAppActions({
-      selectSession: (index) => {
-        const tab = tabsRef.current[index];
-        if (!tab) return;
-        activeIdRef.current = tab.id;
-        setActiveId(tab.id);
-      },
-      nextSession: () => {
-        const currentTabs = tabsRef.current;
-        if (currentTabs.length === 0) return;
-        const currentIndex = currentTabs.findIndex((tab) => tab.id === activeIdRef.current);
-        const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % currentTabs.length;
-        const next = currentTabs[nextIndex];
-        activeIdRef.current = next.id;
-        setActiveId(next.id);
-      },
-      previousSession: () => {
-        const currentTabs = tabsRef.current;
-        if (currentTabs.length === 0) return;
-        const currentIndex = currentTabs.findIndex((tab) => tab.id === activeIdRef.current);
-        const nextIndex = currentIndex < 0 ? 0 : (currentIndex - 1 + currentTabs.length) % currentTabs.length;
-        const next = currentTabs[nextIndex];
-        activeIdRef.current = next.id;
-        setActiveId(next.id);
-      },
-      closeSession: () => {
-        if (activeIdRef.current) void closeTab(activeIdRef.current);
-      },
-      reconnectSession: () => {
-        const tab = tabsRef.current.find((item) => item.id === activeIdRef.current);
-        if (tab) void reconnect(tab);
-      },
       connectServer: (serverId) => {
         const server = serversRef.current.find((item) => item.id === serverId);
         if (server) void connect(server);
@@ -420,9 +393,12 @@ export function App() {
     });
   }, [registerAppActions]);
 
-  function toggleAutoReconnect(id: string) {
-    setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, autoReconnect: !tab.autoReconnect } : tab));
-  }
+  useEffect(() => {
+    registerRuntimeActions({
+      reconnect: (tab) => reconnect(tab),
+      close: (tab) => closeTab(tab.id),
+    });
+  }, [registerRuntimeActions]);
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -464,11 +440,7 @@ export function App() {
         activeIdRef.current = nextActive;
         setActiveId(nextActive);
       }
-      setHistory((current) => {
-        const next = current.filter((item) => item.serverId !== serverId);
-        saveSessionHistory(next);
-        return next;
-      });
+      updateHistory((current) => current.filter((item) => item.serverId !== serverId));
       sessionPasswords.current.delete(serverId);
       await invoke("delete_server", { id: serverId });
       setDeleteServer(null);
@@ -520,7 +492,7 @@ export function App() {
   }
 
   return <main className="app-shell">
-    <SidebarV2 favorites={favorites} groups={groups} query={query} statuses={statuses} checking={checking} onQueryChange={setQuery} onAdd={openNewServer} onImport={() => setImportOpen(true)} onConnect={(server) => void connect(server)} onFavorite={(server) => void toggleFavorite(server)} onExport={(server) => setExportServer(server)} onEdit={openEditServer} onDelete={(server) => setDeleteServer(server)} />
+    <SidebarV2 servers={servers} favorites={favorites} groups={groups} query={query} statuses={statuses} checking={checking} onQueryChange={setQuery} onAdd={openNewServer} onImport={() => setImportOpen(true)} onConnect={(server) => void connect(server)} onFavorite={(server) => void toggleFavorite(server)} onExport={(server) => setExportServer(server)} onEdit={openEditServer} onDelete={(server) => setDeleteServer(server)} />
 
     <section className="workspace">
       <SessionTabs

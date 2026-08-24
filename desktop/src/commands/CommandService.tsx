@@ -1,13 +1,20 @@
 import { createContext, ReactNode, useContext, useMemo, useState } from "react";
 import { useWorkbench } from "../WorkbenchContext";
+import type { FeatureReadiness } from "../workbenchFeatures";
 
 export type CommandId =
   | "workbench.commandPalette.open"
   | "workbench.shortcuts.open"
+  | "workbench.view.servers"
+  | "workbench.view.sftp"
+  | "workbench.view.search"
+  | "workbench.view.ports"
+  | "workbench.view.sessions"
+  | "workbench.view.history"
+  | "workbench.view.settings"
   | "workbench.primarySidebar.toggle"
   | "workbench.secondarySidebar.toggle"
   | "workbench.panel.toggle"
-  | "workbench.panel.terminal"
   | "workbench.panel.ports"
   | "workbench.panel.logs"
   | "workbench.panel.transfers"
@@ -42,9 +49,13 @@ export type CommandDefinition = {
   description: string;
   category: CommandCategory;
   shortcut?: string;
+  readiness: FeatureReadiness;
   enabled: boolean;
+  availabilityReason?: string;
   run: () => void | Promise<void>;
 };
+
+type CommandSpec = Omit<CommandDefinition, "readiness">;
 
 type CommandContextValue = {
   commands: CommandDefinition[];
@@ -70,6 +81,10 @@ const sessionCommandIds: CommandId[] = [
   "session.select.9",
 ];
 
+function markReady(commands: CommandSpec[]): CommandDefinition[] {
+  return commands.map((command) => ({ ...command, readiness: "ready" }));
+}
+
 export function CommandProvider({ children }: { children: ReactNode }) {
   const workbench = useWorkbench();
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -81,7 +96,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
     const hasSelectedTunnel = workbench.selectedTunnel.id !== null;
     const tunnelRunning = workbench.selectedTunnel.state === "running" || workbench.selectedTunnel.state === "stopping";
 
-    const fixed: CommandDefinition[] = [
+    const fixed = markReady([
       {
         id: "workbench.commandPalette.open",
         title: "Show Command Palette",
@@ -99,6 +114,64 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         shortcut: "F1",
         enabled: true,
         run: () => setShortcutsOpen((value) => !value),
+      },
+      {
+        id: "workbench.view.servers",
+        title: "Show Servers Workspace",
+        description: "Open the primary server registry",
+        category: "Workbench",
+        enabled: true,
+        run: () => workbench.showPrimaryView("servers"),
+      },
+      {
+        id: "workbench.view.sftp",
+        title: "Show Remote Files",
+        description: "Open the SFTP remote files workspace",
+        category: "Workbench",
+        enabled: true,
+        run: () => workbench.showPrimaryView("sftp"),
+      },
+      {
+        id: "workbench.view.search",
+        title: "Show Workbench Search",
+        description: "Search servers, sessions, history, ports, transfers, Quick Commands, and SSHDeck commands",
+        category: "Workbench",
+        shortcut: "Ctrl+Shift+F",
+        enabled: true,
+        run: workbench.requestShowSearchWorkspace,
+      },
+      {
+        id: "workbench.view.ports",
+        title: "Show Port Forwarding Workspace",
+        description: "Open the full SSH tunnel workspace",
+        category: "Workbench",
+        enabled: true,
+        run: () => workbench.showPrimaryView("ports"),
+      },
+      {
+        id: "workbench.view.sessions",
+        title: "Show Sessions Workspace",
+        description: "Inspect and control all current SSH sessions",
+        category: "Sessions",
+        enabled: true,
+        run: workbench.requestShowSessionsWorkspace,
+      },
+      {
+        id: "workbench.view.history",
+        title: "Show Session History",
+        description: "Review persisted SSH session history",
+        category: "Sessions",
+        enabled: true,
+        run: workbench.requestShowHistoryWorkspace,
+      },
+      {
+        id: "workbench.view.settings",
+        title: "Show Settings",
+        description: "Configure versioned workspace, diagnostics, transfer, and command-safety behavior",
+        category: "Workbench",
+        shortcut: "Ctrl+,",
+        enabled: true,
+        run: workbench.requestShowSettingsWorkspace,
       },
       {
         id: "server.add",
@@ -120,10 +193,10 @@ export function CommandProvider({ children }: { children: ReactNode }) {
       {
         id: "server.focusSearch",
         title: "Focus Server Search",
-        description: "Move focus to the server filter",
+        description: "Show Servers and focus the server filter",
         category: "Servers",
         shortcut: "Ctrl+Shift+K",
-        enabled: workbench.primaryVisible,
+        enabled: true,
         run: workbench.requestFocusServerSearch,
       },
       {
@@ -132,6 +205,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         description: hasSelectedServer ? `Open an SSH session to ${workbench.selectedServer.name}` : "Select a server first",
         category: "Servers",
         enabled: hasSelectedServer,
+        availabilityReason: hasSelectedServer ? undefined : "Select a server first",
         run: workbench.requestConnectSelectedServer,
       },
       {
@@ -140,6 +214,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         description: hasSelectedServer ? `Edit ${workbench.selectedServer.name}` : "Select a server first",
         category: "Servers",
         enabled: hasSelectedServer,
+        availabilityReason: hasSelectedServer ? undefined : "Select a server first",
         run: workbench.requestEditSelectedServer,
       },
       {
@@ -148,6 +223,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         description: hasSelectedServer ? `Copy OpenSSH config for ${workbench.selectedServer.name}` : "Select a server first",
         category: "Servers",
         enabled: hasSelectedServer,
+        availabilityReason: hasSelectedServer ? undefined : "Select a server first",
         run: workbench.requestExportSelectedServer,
       },
       {
@@ -156,24 +232,27 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         description: hasSelectedServer ? `Remove ${workbench.selectedServer.name} from SSHDeck` : "Select a server first",
         category: "Servers",
         enabled: hasSelectedServer,
+        availabilityReason: hasSelectedServer ? undefined : "Select a server first",
         run: workbench.requestDeleteSelectedServer,
       },
       {
         id: "session.next",
         title: "Next Session",
-        description: "Activate the next SSH session tab",
+        description: hasSession ? "Activate the next SSH session tab" : "No active SSH session",
         category: "Sessions",
         shortcut: "Ctrl+Tab",
         enabled: hasSession,
+        availabilityReason: hasSession ? undefined : "Open an SSH session first",
         run: workbench.requestNextSession,
       },
       {
         id: "session.previous",
         title: "Previous Session",
-        description: "Activate the previous SSH session tab",
+        description: hasSession ? "Activate the previous SSH session tab" : "No active SSH session",
         category: "Sessions",
         shortcut: "Ctrl+Shift+Tab",
         enabled: hasSession,
+        availabilityReason: hasSession ? undefined : "Open an SSH session first",
         run: workbench.requestPreviousSession,
       },
       {
@@ -183,6 +262,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         category: "Sessions",
         shortcut: "Ctrl+Shift+W",
         enabled: hasSession,
+        availabilityReason: hasSession ? undefined : "Open an SSH session first",
         run: workbench.requestCloseSession,
       },
       {
@@ -192,6 +272,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         category: "Sessions",
         shortcut: "Ctrl+Shift+R",
         enabled: hasSession,
+        availabilityReason: hasSession ? undefined : "Open an SSH session first",
         run: workbench.requestReconnectSession,
       },
       {
@@ -200,6 +281,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         description: hasSelectedTunnel ? `Start ${workbench.selectedTunnel.name}` : "Select a tunnel first",
         category: "Tunnels",
         enabled: hasSelectedTunnel && !tunnelRunning,
+        availabilityReason: !hasSelectedTunnel ? "Select a tunnel first" : tunnelRunning ? "Selected tunnel is already running" : undefined,
         run: workbench.requestStartSelectedTunnel,
       },
       {
@@ -208,12 +290,13 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         description: hasSelectedTunnel ? `Stop ${workbench.selectedTunnel.name}` : "Select a tunnel first",
         category: "Tunnels",
         enabled: hasSelectedTunnel && tunnelRunning,
+        availabilityReason: !hasSelectedTunnel ? "Select a tunnel first" : !tunnelRunning ? "Selected tunnel is not running" : undefined,
         run: workbench.requestStopSelectedTunnel,
       },
       {
         id: "workbench.primarySidebar.toggle",
-        title: "Toggle Servers Sidebar",
-        description: "Show or hide the primary server sidebar",
+        title: "Toggle Primary Sidebar",
+        description: "Show or hide the primary workspace sidebar",
         category: "Workbench",
         shortcut: "Ctrl+B",
         enabled: true,
@@ -238,14 +321,6 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         run: () => workbench.setPanelVisible(!workbench.panelVisible),
       },
       {
-        id: "workbench.panel.terminal",
-        title: "Show Terminal Panel",
-        description: "Open the Terminal section of the bottom panel",
-        category: "Panel",
-        enabled: true,
-        run: () => workbench.choosePanel("terminal"),
-      },
-      {
         id: "workbench.panel.ports",
         title: "Show Ports Panel",
         description: "Open managed SSH port forwarding",
@@ -256,7 +331,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
       {
         id: "workbench.panel.logs",
         title: "Show Logs Panel",
-        description: "Open SSH session diagnostics",
+        description: "Open structured SSHDeck diagnostics and runtime events",
         category: "Panel",
         enabled: true,
         run: () => workbench.choosePanel("logs"),
@@ -269,17 +344,18 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         enabled: true,
         run: () => workbench.choosePanel("transfers"),
       },
-    ];
+    ]);
 
-    const sessions = sessionCommandIds.map((id, index): CommandDefinition => ({
+    const sessions = markReady(sessionCommandIds.map((id, index): CommandSpec => ({
       id,
       title: `Select Session ${index + 1}`,
-      description: `Activate SSH session tab ${index + 1}`,
+      description: hasSession ? `Activate SSH session tab ${index + 1}` : "No active SSH session",
       category: "Sessions",
       shortcut: `Ctrl+${index + 1}`,
       enabled: hasSession,
+      availabilityReason: hasSession ? undefined : "Open an SSH session first",
       run: () => workbench.requestSelectSession(index),
-    }));
+    })));
 
     return [...fixed, ...sessions];
   }, [
@@ -298,6 +374,10 @@ export function CommandProvider({ children }: { children: ReactNode }) {
     workbench.requestPreviousSession,
     workbench.requestReconnectSession,
     workbench.requestSelectSession,
+    workbench.requestShowHistoryWorkspace,
+    workbench.requestShowSearchWorkspace,
+    workbench.requestShowSessionsWorkspace,
+    workbench.requestShowSettingsWorkspace,
     workbench.requestStartSelectedTunnel,
     workbench.requestStopSelectedTunnel,
     workbench.secondaryVisible,
@@ -311,6 +391,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
     workbench.setPanelVisible,
     workbench.setPrimaryVisible,
     workbench.setSecondaryVisible,
+    workbench.showPrimaryView,
   ]);
 
   const commandMap = useMemo(() => new Map(commands.map((command) => [command.id, command])), [commands]);
@@ -324,7 +405,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
     getCommand: (id) => commandMap.get(id),
     execute: async (id) => {
       const command = commandMap.get(id);
-      if (!command?.enabled) return false;
+      if (!command || command.readiness === "planned" || !command.enabled) return false;
       await command.run();
       return true;
     },

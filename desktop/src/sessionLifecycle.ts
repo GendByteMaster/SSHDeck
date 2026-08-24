@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type SessionState = "active" | "reconnecting" | "disconnected" | "failed";
 
+export const SESSION_HISTORY_LIMIT = 200;
+
 export type SessionProcessStatus = {
   sessionId: string;
   serverId: string;
@@ -32,8 +34,10 @@ export type SessionHistoryItem = {
   serverName: string;
   state: "disconnected" | "failed" | "reconnected" | "closed";
   atMs: number;
+  startedAtMs?: number | null;
   durationMs: number;
   exitCode: number | null;
+  signal?: string | null;
 };
 
 type WorkspaceSnapshot = { sessionHistory?: SessionHistoryItem[] };
@@ -46,12 +50,12 @@ export function loadSessionHistory(): SessionHistoryItem[] {
 
 export async function hydrateSessionHistory(): Promise<SessionHistoryItem[]> {
   const workspace = await invoke<WorkspaceSnapshot>("workspace_load");
-  historyCache = Array.isArray(workspace.sessionHistory) ? workspace.sessionHistory.slice(0, 30) : [];
+  historyCache = Array.isArray(workspace.sessionHistory) ? workspace.sessionHistory.slice(0, SESSION_HISTORY_LIMIT) : [];
   return historyCache.slice();
 }
 
 export function saveSessionHistory(items: SessionHistoryItem[]) {
-  historyCache = items.slice(0, 30);
+  historyCache = items.slice(0, SESSION_HISTORY_LIMIT);
   void invoke("workspace_save_session_history", { items: historyCache });
 }
 
