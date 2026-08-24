@@ -5,6 +5,7 @@ import type { FeatureReadiness } from "../workbenchFeatures";
 export type CommandId =
   | "workbench.commandPalette.open"
   | "workbench.shortcuts.open"
+  | "workbench.view.sessions"
   | "workbench.primarySidebar.toggle"
   | "workbench.secondarySidebar.toggle"
   | "workbench.panel.toggle"
@@ -106,6 +107,14 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         shortcut: "F1",
         enabled: true,
         run: () => setShortcutsOpen((value) => !value),
+      },
+      {
+        id: "workbench.view.sessions",
+        title: "Show Sessions Workspace",
+        description: "Inspect and control all current SSH sessions",
+        category: "Sessions",
+        enabled: true,
+        run: workbench.requestShowSessionsWorkspace,
       },
       {
         id: "server.add",
@@ -301,6 +310,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
     workbench.requestPreviousSession,
     workbench.requestReconnectSession,
     workbench.requestSelectSession,
+    workbench.requestShowSessionsWorkspace,
     workbench.requestStartSelectedTunnel,
     workbench.requestStopSelectedTunnel,
     workbench.secondaryVisible,
