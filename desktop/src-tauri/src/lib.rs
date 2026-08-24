@@ -421,7 +421,7 @@ fn workspace_save_layout(layout: WorkbenchLayout) -> Result<WorkspaceData, Strin
 fn workspace_save_session_history(
     mut items: Vec<SessionHistoryRecord>,
 ) -> Result<WorkspaceData, String> {
-    items.truncate(30);
+    items.truncate(200);
     let store = WorkspaceStore::load_default().map_err(|error| error.to_string())?;
     let mut data = store.load().map_err(|error| error.to_string())?;
     data.session_history = items;
