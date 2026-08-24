@@ -50,7 +50,7 @@ export const activityFeatures: WorkbenchFeature<ActivityFeatureId>[] = [
     id: "sessions",
     label: "Sessions",
     description: "Inspect and control all SSH sessions from one workspace.",
-    readiness: "planned",
+    readiness: "ready",
   },
   {
     id: "history",
