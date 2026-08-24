@@ -3,6 +3,7 @@ import {
   Copy,
   Download,
   FolderClock,
+  FolderTree,
   History,
   Pencil,
   Plus,
@@ -15,9 +16,10 @@ import {
   Waypoints,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useCommandContextMenu } from "./commands/ContextMenuService";
 import { ServerStatus } from "./serverStatus";
+import { SftpBrowser } from "./SftpBrowser";
 import { useWorkbench } from "./WorkbenchContext";
 
 export type SidebarServer = {
@@ -49,15 +51,18 @@ type Props = {
   onDelete: (server: SidebarServer) => void;
 };
 
+type SidebarView = "servers" | "sftp";
+
 const clamp = (value: number) => Math.min(520, Math.max(280, value));
 
 const activityItems = [
-  { label: "Servers", icon: Server, active: true },
-  { label: "Search", icon: Search },
-  { label: "Port forwarding", icon: Waypoints },
-  { label: "Sessions", icon: TerminalSquare },
-  { label: "History", icon: History },
-  { label: "Transfers", icon: FolderClock },
+  { id: "servers" as const, label: "Servers", icon: Server, enabled: true },
+  { id: "sftp" as const, label: "Remote files", icon: FolderTree, enabled: true },
+  { id: null, label: "Search", icon: Search, enabled: false },
+  { id: null, label: "Port forwarding", icon: Waypoints, enabled: false },
+  { id: null, label: "Sessions", icon: TerminalSquare, enabled: false },
+  { id: null, label: "History", icon: History, enabled: false },
+  { id: null, label: "Transfers", icon: FolderClock, enabled: false },
 ];
 
 function statusClass(state: string) {
@@ -119,12 +124,13 @@ export function SidebarV2({ favorites, groups, query, statuses, checking, onQuer
   const count = favorites.length + groups.reduce((sum, [, items]) => sum + items.length, 0);
   const dragStart = useRef<{ x: number; width: number } | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const [view, setView] = useState<SidebarView>("servers");
   const { registerAppActions, primaryWidth, setPrimaryWidth, selectedServer, setSelectedServer } = useWorkbench();
   const popupCommands = useCommandContextMenu();
   const allServers = useMemo(() => [...favorites, ...groups.flatMap(([, items]) => items)], [favorites, groups]);
 
   useEffect(() => {
-    registerAppActions({ addServer: onAdd, importOpenSsh: onImport, focusServerSearch: () => { searchRef.current?.focus(); searchRef.current?.select(); } });
+    registerAppActions({ addServer: onAdd, importOpenSsh: onImport, focusServerSearch: () => { setView("servers"); searchRef.current?.focus(); searchRef.current?.select(); } });
   }, [onAdd, onImport, registerAppActions]);
 
   useEffect(() => {
@@ -135,6 +141,11 @@ export function SidebarV2({ favorites, groups, query, statuses, checking, onQuer
 
   function selectServer(server: SidebarServer) {
     setSelectedServer({ id: server.id, name: server.name });
+  }
+
+  function selectSftpServer(serverId: string) {
+    const server = allServers.find((value) => value.id === serverId);
+    if (server) selectServer(server);
   }
 
   function showServerContextMenu(server: SidebarServer, event: React.MouseEvent<HTMLDivElement>) {
@@ -180,12 +191,27 @@ export function SidebarV2({ favorites, groups, query, statuses, checking, onQuer
     <nav className="flex min-h-0 flex-col items-center border-r border-white/[0.055] bg-[#080a0e] px-1.5 py-2" aria-label="Workbench navigation">
       <div className="mb-2 grid size-9 place-items-center rounded-xl bg-zinc-100 text-[13px] font-bold text-zinc-900 shadow-sm">S</div>
       <div className="flex w-full flex-col items-center gap-1">
-        {activityItems.map(({ label, icon: Icon, active }) => <button key={label} type="button" title={active ? label : `${label} · coming soon`} aria-label={label} aria-current={active ? "page" : undefined} disabled={!active} className={`relative grid size-10 place-items-center rounded-xl transition-colors ${active ? "bg-[#4f7cff]/12 text-[#89a5ff]" : "text-zinc-600 hover:bg-white/[0.035] hover:text-zinc-400 disabled:cursor-default disabled:opacity-65"}`}>{active && <span className="absolute -left-1.5 h-5 w-0.5 rounded-r-full bg-[#6f91ff]" />}<Icon size={18} strokeWidth={1.8} /></button>)}
+        {activityItems.map(({ id, label, icon: Icon, enabled }, index) => {
+          const active = id !== null && view === id;
+          return <button
+            key={`${label}-${index}`}
+            type="button"
+            title={enabled ? label : `${label} · coming soon`}
+            aria-label={label}
+            aria-current={active ? "page" : undefined}
+            disabled={!enabled}
+            onClick={() => { if (id) setView(id); }}
+            className={`relative grid size-10 place-items-center rounded-xl transition-colors ${active ? "bg-[#4f7cff]/12 text-[#89a5ff]" : "text-zinc-600 hover:bg-white/[0.035] hover:text-zinc-400 disabled:cursor-default disabled:opacity-65"}`}
+          >
+            {active && <span className="absolute -left-1.5 h-5 w-0.5 rounded-r-full bg-[#6f91ff]" />}
+            <Icon size={18} strokeWidth={1.8} />
+          </button>;
+        })}
       </div>
       <div className="mt-auto"><button type="button" title="Settings · coming soon" aria-label="Settings" disabled className="grid size-10 place-items-center rounded-xl text-zinc-600 opacity-65"><Settings size={18} strokeWidth={1.8} /></button></div>
     </nav>
 
-    <div className="flex min-h-0 min-w-0 flex-col bg-[#0d1015]/92">
+    {view === "servers" ? <div className="flex min-h-0 min-w-0 flex-col bg-[#0d1015]/92">
       <header className="px-3.5 pb-3 pt-3.5">
         <div className="mb-3 flex items-center justify-between gap-3"><div className="min-w-0"><span className="block text-[10px] font-semibold uppercase tracking-[0.13em] text-zinc-600">Servers</span><strong className="mt-0.5 block truncate text-[14px] font-semibold tracking-[-0.01em] text-zinc-200">Connections</strong></div><span className="grid min-w-6 place-items-center rounded-full border border-white/[0.06] bg-white/[0.025] px-1.5 py-0.5 text-[10px] font-medium text-zinc-500">{count}</span></div>
         <div className="grid grid-cols-[1fr_auto] gap-2"><HeroButton onPress={onAdd} className="h-9 rounded-xl bg-[#4f7cff] px-3 text-[12px] font-medium text-white shadow-[0_8px_22px_rgba(79,124,255,0.2)]"><Plus size={14} /> Add server</HeroButton><HeroButton onPress={onImport} className="h-9 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 text-[12px] font-medium text-zinc-400"><Download size={14} /> Import</HeroButton></div>
@@ -196,7 +222,9 @@ export function SidebarV2({ favorites, groups, query, statuses, checking, onQuer
         {groups.map(([group, items]) => <section key={group} className="mb-4"><div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-700">{group}</div>{items.map(renderServer)}</section>)}
         {count === 0 && <div className="mx-2 mt-6 flex flex-col items-center rounded-2xl border border-dashed border-white/[0.07] px-4 py-7 text-center"><div className="grid size-9 place-items-center rounded-xl bg-white/[0.035] text-zinc-600"><Server size={16} /></div><strong className="mt-3 text-[12px] font-medium text-zinc-400">No servers</strong><span className="mt-1 max-w-44 text-[11px] leading-5 text-zinc-700">Add a server or import your OpenSSH config.</span></div>}
       </div>
-    </div>
+    </div> : <div className="flex min-h-0 min-w-0 flex-col bg-[#0d1015]/92">
+      <SftpBrowser servers={allServers} selectedServerId={selectedServer.id} onSelectServer={selectSftpServer} />
+    </div>}
 
     <div role="separator" aria-orientation="vertical" aria-label="Resize server sidebar" className="absolute -right-1.5 top-0 z-30 h-full w-3 cursor-col-resize touch-none after:absolute after:left-[5px] after:top-0 after:h-full after:w-px after:bg-transparent hover:after:bg-[#6f91ff]/50" onPointerDown={beginResize} onPointerMove={resize} onPointerUp={endResize} />
   </aside>;
