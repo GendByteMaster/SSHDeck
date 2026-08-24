@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
-export type PanelTab = "transfers";
+export type PanelTab = "ports" | "transfers";
 
 export type SessionSnapshot = {
   id: string | null;
@@ -101,7 +101,7 @@ const defaults: WorkbenchState = {
 const WorkbenchContext = createContext<WorkbenchContextValue | null>(null);
 
 function isPanelTab(value: string): value is PanelTab {
-  return value === "transfers";
+  return value === "ports" || value === "transfers";
 }
 
 function clampPrimaryWidth(value: number) {
