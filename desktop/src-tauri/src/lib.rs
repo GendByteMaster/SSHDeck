@@ -1,5 +1,6 @@
 mod status;
 mod sftp;
+mod sftp_diagnostics;
 mod transfers;
 
 use std::collections::HashMap;
@@ -789,6 +790,7 @@ pub fn run() {
             sftp::sftp_remove,
             sftp::sftp_upload,
             sftp::sftp_download,
+            sftp_diagnostics::sftp_diagnose,
             transfers::sftp_start_upload,
             transfers::sftp_start_download,
             transfers::sftp_transfer_list,
