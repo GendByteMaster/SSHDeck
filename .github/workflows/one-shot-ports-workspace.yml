@@ -1,0 +1,155 @@
+name: one-shot ports workspace integration
+
+on:
+  push:
+    branches: [feat/ports-workspace]
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/ports-workspace
+
+      - name: Apply Ports Workspace integration
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          def replace_once(path: str, old: str, new: str):
+              file = Path(path)
+              text = file.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected block not found in {path}: {old[:140]!r}")
+              file.write_text(text.replace(old, new, 1))
+
+          # Root providers: TunnelProvider owns tunnel lifecycle and sits above commands/views.
+          path = "desktop/src/main.tsx"
+          replace_once(path, 'import { TransferProvider } from "./TransferContext";\n', 'import { TransferProvider } from "./TransferContext";\nimport { TunnelProvider } from "./TunnelContext";\n')
+          replace_once(path, '  <WorkbenchProvider>\n    <TransferProvider>\n', '  <WorkbenchProvider>\n    <TunnelProvider>\n      <TransferProvider>\n')
+          replace_once(path, '    </TransferProvider>\n  </WorkbenchProvider>,\n', '      </TransferProvider>\n    </TunnelProvider>\n  </WorkbenchProvider>,\n')
+
+          # Ports becomes production-ready in Activity Bar and Bottom Panel.
+          path = "desktop/src/workbenchFeatures.ts"
+          text = Path(path).read_text()
+          text, n1 = re.subn(r'(id: "ports",\n\s+label: "Port forwarding",[\s\S]*?readiness: )"planned"', r'\1"ready"', text, count=1)
+          text, n2 = re.subn(r'(id: "ports",\n\s+label: "Ports",[\s\S]*?readiness: )"planned"', r'\1"ready"', text, count=1)
+          if n1 != 1 or n2 != 1:
+              raise SystemExit(f"could not mark ports ready: activity={n1} panel={n2}")
+          Path(path).write_text(text)
+
+          # Ports is now a valid persisted panel tab; legacy unsupported tabs still migrate to transfers.
+          path = "desktop/src/WorkbenchContext.tsx"
+          replace_once(path, 'export type PanelTab = "transfers";\n', 'export type PanelTab = "ports" | "transfers";\n')
+          replace_once(path, '  return value === "transfers";\n', '  return value === "ports" || value === "transfers";\n')
+
+          # Bottom panel renders real Ports and Transfers views.
+          path = "desktop/src/WorkbenchChrome.tsx"
+          replace_once(path, 'import { TransfersPanel } from "./TransfersPanel";\n', 'import { PortsPanel } from "./PortsPanel";\nimport { TransfersPanel } from "./TransfersPanel";\n')
+          replace_once(path, 'const panelCommands: Partial<Record<PanelFeatureId, CommandId>> = {\n  transfers: "workbench.panel.transfers",\n};\n', 'const panelCommands: Partial<Record<PanelFeatureId, CommandId>> = {\n  ports: "workbench.panel.ports",\n  transfers: "workbench.panel.transfers",\n};\n')
+          replace_once(path, '        <TransfersPanel />\n', '        {panelTab === "ports" ? <PortsPanel /> : <TransfersPanel />}\n')
+
+          # CommandService exposes the real Ports panel through the same command path as menus/palette.
+          path = "desktop/src/commands/CommandService.tsx"
+          replace_once(path, '  | "workbench.panel.toggle"\n  | "workbench.panel.transfers"\n', '  | "workbench.panel.toggle"\n  | "workbench.panel.ports"\n  | "workbench.panel.transfers"\n')
+          replace_once(path, '''      {
+        id: "workbench.panel.transfers",
+        title: "Show Transfers Panel",
+''', '''      {
+        id: "workbench.panel.ports",
+        title: "Show Ports Panel",
+        description: "Open managed SSH port forwarding",
+        category: "Panel",
+        enabled: true,
+        run: () => workbench.choosePanel("ports"),
+      },
+      {
+        id: "workbench.panel.transfers",
+        title: "Show Transfers Panel",
+''')
+
+          # Activity Bar gains Ports as a true sidebar view backed by the shared provider.
+          path = "desktop/src/SidebarV2.tsx"
+          replace_once(path, 'import { ServerStatus } from "./serverStatus";\n', 'import { PortsWorkspace } from "./PortsWorkspace";\nimport { ServerStatus } from "./serverStatus";\n')
+          replace_once(path, 'type SidebarView = "servers" | "sftp";\n', 'type SidebarView = "servers" | "sftp" | "ports";\n')
+          replace_once(path, '''  function activateActivity(id: ActivityFeatureId) {
+    if (id === "servers" || id === "sftp") {
+      setView(id);
+      return;
+    }
+    if (id === "transfers") choosePanel("transfers");
+  }
+''', '''  function activateActivity(id: ActivityFeatureId) {
+    if (id === "servers" || id === "sftp" || id === "ports") {
+      setView(id);
+      return;
+    }
+    if (id === "transfers") choosePanel("transfers");
+  }
+''')
+          replace_once(path, '''          const active = id === "transfers"
+            ? panelVisible && panelTab === "transfers"
+            : (id === "servers" || id === "sftp") && view === id;
+''', '''          const active = id === "transfers"
+            ? panelVisible && panelTab === "transfers"
+            : (id === "servers" || id === "sftp" || id === "ports") && view === id;
+''')
+          replace_once(path, '''    </div> : <div className="flex min-h-0 min-w-0 flex-col bg-[#0d1015]/92">
+      <SftpBrowser servers={allServers} selectedServerId={selectedServer.id} onSelectServer={selectSftpServer} />
+    </div>}
+''', '''    </div> : view === "sftp" ? <div className="flex min-h-0 min-w-0 flex-col bg-[#0d1015]/92">
+      <SftpBrowser servers={allServers} selectedServerId={selectedServer.id} onSelectServer={selectSftpServer} />
+    </div> : <PortsWorkspace servers={allServers} activeServerId={selectedServer.id} />}
+''')
+
+          # Inspector no longer owns tunnel polling/process lifecycle. It consumes TunnelProvider.
+          path = "desktop/src/ToolsPanel.tsx"
+          text = Path(path).read_text()
+          text = text.replace('import { TunnelProcessStatus, tunnelStateLabel } from "./tunnelHealth";\n', 'import { tunnelStateLabel } from "./tunnelHealth";\nimport { Tunnel, useTunnels } from "./TunnelContext";\nimport { TunnelEditorDialog } from "./TunnelEditorDialog";\n')
+          text, count = re.subn(r'type TunnelKind = "local" \| "remote" \| "dynamic";\ntype Tunnel = \{[\s\S]*?\n\};\n', '', text, count=1)
+          if count != 1:
+              raise SystemExit("could not remove local Tunnel types")
+          text = text.replace('  const [tunnelStatuses, setTunnelStatuses] = useState<Record<string, TunnelProcessStatus | null>>({});\n', '')
+          text = text.replace('  const restarting = useRef(new Set<string>());\n  const restartAttempts = useRef(new Map<string, number>());\n', '')
+          text = text.replace('  const popupCommands = useCommandContextMenu();\n', '  const popupCommands = useCommandContextMenu();\n  const { tunnels, statuses: tunnelStatuses, toggleTunnel, deleteTunnel, toggleAutoRestart: toggleTunnelAutoRestart, restartAttempts } = useTunnels();\n')
+          text, count = re.subn(r'\n  async function startTunnel\(id: string\) \{[\s\S]*?\n  const visibleCommands = useMemo', '\n  const visibleCommands = useMemo', text, count=1)
+          if count != 1:
+              raise SystemExit("could not remove legacy tunnel lifecycle")
+          replacement = '''
+  function selectTunnel(item: Tunnel) {
+    const state = tunnelStatuses[item.id]?.state ?? "stopped";
+    setSelectedTunnel({ id: item.id, name: item.name, state });
+  }
+
+  function showTunnelContextMenu(item: Tunnel, event: React.MouseEvent<HTMLDivElement>) {
+    event.preventDefault();
+    selectTunnel(item);
+    void popupCommands(["tunnel.start", "tunnel.stop"]);
+  }
+
+  const statusState'''
+          text, count = re.subn(r'\n  async function toggleTunnel\(id: string\) \{[\s\S]*?\n  const statusState', replacement, text, count=1)
+          if count != 1:
+              raise SystemExit("could not replace legacy tunnel actions")
+          text = text.replace('        {data.tunnels.map((item) => {', '        {tunnels.map((item) => {')
+          text = text.replace('          const attempts = restartAttempts.current.get(item.id) ?? 0;', '          const attempts = restartAttempts(item.id);')
+          text = text.replace('        {data.tunnels.length === 0 && <p className="tool-empty">No saved tunnels.</p>}', '        {tunnels.length === 0 && <p className="tool-empty">No saved tunnels.</p>}')
+          text = text.replace('{tunnelOpen && <TunnelDialog servers={servers} activeServerId={activeServerId} onClose={() => setTunnelOpen(false)} onSaved={(next) => { dataRef.current = next; setData(next); setTunnelOpen(false); }} onError={onError} />}', '{tunnelOpen && <TunnelEditorDialog servers={servers} activeServerId={activeServerId} onClose={() => setTunnelOpen(false)} />}')
+          text, count = re.subn(r'\nfunction TunnelDialog\([\s\S]*$', '\n', text, count=1)
+          if count != 1:
+              raise SystemExit("could not remove legacy TunnelDialog")
+          Path(path).write_text(text)
+
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/one-shot-ports-workspace.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add desktop/src .github/workflows/one-shot-ports-workspace.yml
+          git commit -m "feat(ports): integrate shared ports workspace"
+          git push origin HEAD:feat/ports-workspace
