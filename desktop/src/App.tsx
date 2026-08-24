@@ -19,6 +19,8 @@ import {
   X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { EmptyWorkspaceV2 } from "./product-v2";
+import { SidebarV2 } from "./SidebarV2";
 import { ToolsPanel } from "./ToolsPanel";
 import { useServerStatus } from "./serverStatus";
 import {
@@ -488,19 +490,21 @@ export function App() {
   }
 
   return <main className="app-shell">
-    <aside className="sidebar">
-      <div className="brand"><div className="brand-mark">S</div><div><strong>SSHDeck</strong><span>Secure connections</span></div></div>
-      <div className="sidebar-actions">
-        <button className="primary" onClick={openNewServer}><Plus size={15} /> Add server</button>
-        <button className="secondary" onClick={() => setImportOpen(true)}><Download size={15} /> Import SSH</button>
-      </div>
-      <div className="search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search servers" /></div>
-      <div className="server-list">
-        {favorites.length > 0 && <><div className="section-label">FAVORITES</div>{favorites.map((server) => <ServerRow key={server.id} server={server} />)}</>}
-        {groups.map(([group, items]) => <div key={group}><div className="section-label">{group.toUpperCase()}</div>{items.map((server) => <ServerRow key={server.id} server={server} />)}</div>)}
-        {filtered.length === 0 && <div className="empty">No servers yet. Add one or import your OpenSSH config.</div>}
-      </div>
-    </aside>
+    <SidebarV2
+      favorites={favorites}
+      groups={groups}
+      query={query}
+      statuses={statuses}
+      checking={checking}
+      onQueryChange={setQuery}
+      onAdd={openNewServer}
+      onImport={() => setImportOpen(true)}
+      onConnect={(server) => void connect(server)}
+      onFavorite={(server) => void toggleFavorite(server)}
+      onExport={(server) => setExportServer(server)}
+      onEdit={openEditServer}
+      onDelete={(server) => setDeleteServer(server)}
+    />
 
     <section className="workspace">
       <header className="topbar"><div className="tabs">{tabs.map((tab) => <button key={tab.id} className={`tab ${activeId === tab.id ? "active" : ""}`} onClick={() => setActiveId(tab.id)}>
@@ -508,7 +512,7 @@ export function App() {
         <RefreshCw size={12} className={tab.state === "reconnecting" ? "spin" : ""} onClick={(event) => { event.stopPropagation(); void reconnect(tab); }} />
         <X size={13} onClick={(event) => { event.stopPropagation(); void closeTab(tab.id); }} />
       </button>)}</div></header>
-      {activeId ? <div ref={terminalHost} className="terminal-host" /> : <div className="welcome"><div className="welcome-icon"><Server size={30} /></div><h1>Your servers, one click away</h1><p>Select a server to open a real PTY-backed OpenSSH session.</p></div>}
+      {activeId ? <div ref={terminalHost} className="terminal-host" /> : <EmptyWorkspaceV2 onAddServer={openNewServer} onImport={() => setImportOpen(true)} />}
     </section>
 
     <ToolsPanel
