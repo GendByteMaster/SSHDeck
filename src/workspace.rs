@@ -249,7 +249,10 @@ mod tests {
         assert!(workspace.settings.auto_reconnect_default);
         assert_eq!(workspace.settings.diagnostic_timeout_seconds, 8);
         assert_eq!(workspace.settings.transfer_concurrency, 2);
-        assert_eq!(workspace.settings.command_safety_policy, CommandSafetyPolicy::Standard);
+        assert_eq!(
+            workspace.settings.command_safety_policy,
+            CommandSafetyPolicy::Standard
+        );
         assert!(workspace.settings.restore_workspace_layout);
     }
 
@@ -268,7 +271,9 @@ mod tests {
         assert_eq!(settings.schema_version, SETTINGS_SCHEMA_VERSION);
         assert_eq!(settings.diagnostic_timeout_seconds, 30);
         assert_eq!(settings.transfer_concurrency, 1);
-        settings.validate().expect("migrated settings should be valid");
+        settings
+            .validate()
+            .expect("migrated settings should be valid");
     }
 
     #[test]
