@@ -68,7 +68,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     setPanelVisible,
     choosePanel: (tab) => { setPanelTab(tab); setPanelVisible(true); },
     setSessionSnapshot,
-    registerAppActions: setAppActions,
+    registerAppActions: (actions) => setAppActions((current) => ({ ...current, ...actions })),
     requestAddServer: () => appActions.addServer?.(),
     requestImportOpenSsh: () => appActions.importOpenSsh?.(),
     requestFocusServerSearch: () => appActions.focusServerSearch?.(),
