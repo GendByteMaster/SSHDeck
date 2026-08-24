@@ -7,7 +7,6 @@ import "./apple.css";
 import "./design-components.css";
 import "./ui-v2.css";
 import "./product-v2.css";
-import "./inspector-v2.css";
 import "./workspace-v3.css";
 import "./performance.css";
 import "./keyboard.css";
