@@ -11,6 +11,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { useCommands } from "./commands/CommandService";
+import { LogsPanel } from "./LogsPanel";
 import { PortsPanel } from "./PortsPanel";
 import { TransfersPanel } from "./TransfersPanel";
 import { PanelTab, useWorkbench } from "./WorkbenchContext";
@@ -29,7 +30,7 @@ type ReadyPanelTab = {
 };
 
 const panelTabs: ReadyPanelTab[] = productionPanelFeatures().flatMap((feature) => {
-  if (feature.id !== "ports" && feature.id !== "transfers") return [];
+  if (feature.id !== "ports" && feature.id !== "logs" && feature.id !== "transfers") return [];
   return [{ id: feature.id, label: feature.label, icon: panelIcons[feature.id] }];
 });
 
@@ -53,7 +54,7 @@ export function WorkbenchChrome() {
           <span className="flex-1" />
           <Button isIconOnly aria-label="Hide panel" onPress={() => void execute("workbench.panel.toggle")} className="size-8 min-w-8 rounded-lg bg-transparent text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200"><ChevronDown size={15} /></Button>
         </header>
-        {panelTab === "ports" ? <PortsPanel /> : <TransfersPanel />}
+        {panelTab === "ports" ? <PortsPanel /> : panelTab === "logs" ? <LogsPanel /> : <TransfersPanel />}
       </motion.section>}
     </AnimatePresence>
 
