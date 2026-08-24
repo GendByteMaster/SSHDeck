@@ -40,6 +40,10 @@ type WorkbenchActions = {
   requestImportOpenSsh: () => void;
   requestFocusServerSearch: () => void;
   requestSelectSession: (index: number) => void;
+  requestNextSession: () => void;
+  requestPreviousSession: () => void;
+  requestCloseSession: () => void;
+  requestReconnectSession: () => void;
   registerAppActions: (actions: AppActions) => void;
 };
 
@@ -48,6 +52,10 @@ export type AppActions = {
   importOpenSsh?: () => void;
   focusServerSearch?: () => void;
   selectSession?: (index: number) => void;
+  nextSession?: () => void;
+  previousSession?: () => void;
+  closeSession?: () => void;
+  reconnectSession?: () => void;
 };
 
 type WorkbenchContextValue = WorkbenchState & WorkbenchActions;
@@ -138,6 +146,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     requestImportOpenSsh: () => appActions.importOpenSsh?.(),
     requestFocusServerSearch: () => appActions.focusServerSearch?.(),
     requestSelectSession: (index) => appActions.selectSession?.(index),
+    requestNextSession: () => appActions.nextSession?.(),
+    requestPreviousSession: () => appActions.previousSession?.(),
+    requestCloseSession: () => appActions.closeSession?.(),
+    requestReconnectSession: () => appActions.reconnectSession?.(),
   }), [appActions, choosePanel, panelTab, panelVisible, primaryVisible, primaryWidth, registerAppActions, secondaryVisible, session, setPrimaryWidth]);
 
   const rootClassName = [
