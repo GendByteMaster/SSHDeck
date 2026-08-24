@@ -11,6 +11,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { CommandId, useCommands } from "./commands/CommandService";
+import { PortsPanel } from "./PortsPanel";
 import { TransfersPanel } from "./TransfersPanel";
 import { useWorkbench } from "./WorkbenchContext";
 import { PanelFeatureId, productionPanelFeatures } from "./workbenchFeatures";
@@ -22,6 +23,7 @@ const panelIcons: Record<PanelFeatureId, typeof UploadCloud> = {
 };
 
 const panelCommands: Partial<Record<PanelFeatureId, CommandId>> = {
+  ports: "workbench.panel.ports",
   transfers: "workbench.panel.transfers",
 };
 
@@ -51,7 +53,7 @@ export function WorkbenchChrome() {
           <span className="flex-1" />
           <Button isIconOnly aria-label="Hide panel" onPress={() => void execute("workbench.panel.toggle")} className="size-8 min-w-8 rounded-lg bg-transparent text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200"><ChevronDown size={15} /></Button>
         </header>
-        <TransfersPanel />
+        {panelTab === "ports" ? <PortsPanel /> : <TransfersPanel />}
       </motion.section>}
     </AnimatePresence>
 
