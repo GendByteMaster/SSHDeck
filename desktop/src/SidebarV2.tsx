@@ -16,7 +16,8 @@ import {
   Waypoints,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
+import { CommandId, useCommands } from "./commands/CommandService";
 import { useCommandContextMenu } from "./commands/ContextMenuService";
 import { HistoryWorkspace } from "./HistoryWorkspace";
 import { PortsWorkspace } from "./PortsWorkspace";
@@ -58,8 +59,6 @@ type Props = {
   onDelete: (server: SidebarServer) => void;
 };
 
-type SidebarView = "servers" | "sftp" | "search" | "ports" | "sessions" | "history" | "settings";
-
 const clamp = (value: number) => Math.min(520, Math.max(280, value));
 
 const activityIcons: Record<ActivityFeatureId, typeof Server> = {
@@ -71,6 +70,17 @@ const activityIcons: Record<ActivityFeatureId, typeof Server> = {
   history: History,
   transfers: FolderClock,
   settings: Settings,
+};
+
+const activityCommand: Record<ActivityFeatureId, CommandId> = {
+  servers: "workbench.view.servers",
+  sftp: "workbench.view.sftp",
+  search: "workbench.view.search",
+  ports: "workbench.view.ports",
+  sessions: "workbench.view.sessions",
+  history: "workbench.view.history",
+  transfers: "workbench.panel.transfers",
+  settings: "workbench.view.settings",
 };
 
 const activityItems = productionActivityFeatures().map((feature) => ({ ...feature, icon: activityIcons[feature.id] }));
@@ -123,8 +133,8 @@ export function SidebarV2({ servers, favorites, groups, query, statuses, checkin
   const count = favorites.length + groups.reduce((sum, [, items]) => sum + items.length, 0);
   const dragStart = useRef<{ x: number; width: number } | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
-  const [view, setView] = useState<SidebarView>("servers");
-  const { choosePanel, panelTab, panelVisible, registerAppActions, primaryWidth, setPrimaryWidth, selectedServer, setSelectedServer } = useWorkbench();
+  const { execute } = useCommands();
+  const { panelTab, panelVisible, primaryView: view, registerAppActions, primaryWidth, setPrimaryWidth, selectedServer, setSelectedServer } = useWorkbench();
   const popupCommands = useCommandContextMenu();
   const allServers = servers;
 
@@ -132,11 +142,12 @@ export function SidebarV2({ servers, favorites, groups, query, statuses, checkin
     registerAppActions({
       addServer: onAdd,
       importOpenSsh: onImport,
-      focusServerSearch: () => { setView("servers"); searchRef.current?.focus(); searchRef.current?.select(); },
-      showSearchWorkspace: () => setView("search"),
-      showSessionsWorkspace: () => setView("sessions"),
-      showHistoryWorkspace: () => setView("history"),
-      showSettingsWorkspace: () => setView("settings"),
+      focusServerSearch: () => {
+        requestAnimationFrame(() => {
+          searchRef.current?.focus();
+          searchRef.current?.select();
+        });
+      },
     });
   }, [onAdd, onImport, registerAppActions]);
 
@@ -147,11 +158,6 @@ export function SidebarV2({ servers, favorites, groups, query, statuses, checkin
   function selectServer(server: SidebarServer) { setSelectedServer({ id: server.id, name: server.name }); }
   function selectSftpServer(serverId: string) { const server = allServers.find((value) => value.id === serverId); if (server) selectServer(server); }
   function showServerContextMenu(server: SidebarServer, event: React.MouseEvent<HTMLDivElement>) { event.preventDefault(); selectServer(server); void popupCommands(["server.connect", "server.edit", "server.exportOpenSsh", "server.delete"]); }
-
-  function activateActivity(id: ActivityFeatureId) {
-    if (id === "servers" || id === "sftp" || id === "search" || id === "ports" || id === "sessions" || id === "history" || id === "settings") { setView(id); return; }
-    if (id === "transfers") choosePanel("transfers");
-  }
 
   function beginResize(event: React.PointerEvent<HTMLDivElement>) { dragStart.current = { x: event.clientX, width: primaryWidth }; event.currentTarget.setPointerCapture(event.pointerId); }
   function resize(event: React.PointerEvent<HTMLDivElement>) { if (dragStart.current) setPrimaryWidth(clamp(dragStart.current.width + event.clientX - dragStart.current.x)); }
@@ -166,8 +172,8 @@ export function SidebarV2({ servers, favorites, groups, query, statuses, checkin
       <div className="mb-2 grid size-9 place-items-center rounded-xl bg-zinc-100 text-[13px] font-bold text-zinc-900 shadow-sm">S</div>
       <div className="flex w-full flex-col items-center gap-1">
         {activityItems.map(({ id, label, icon: Icon }) => {
-          const active = id === "transfers" ? panelVisible && panelTab === "transfers" : (id === "servers" || id === "sftp" || id === "search" || id === "ports" || id === "sessions" || id === "history" || id === "settings") && view === id;
-          return <button key={id} type="button" title={label} aria-label={label} aria-current={active ? "page" : undefined} onClick={() => activateActivity(id)} className={`relative grid size-10 place-items-center rounded-xl transition-colors ${active ? "bg-[#4f7cff]/12 text-[#89a5ff]" : "text-zinc-600 hover:bg-white/[0.035] hover:text-zinc-400"}`}>{active && <span className="absolute -left-1.5 h-5 w-0.5 rounded-r-full bg-[#6f91ff]" />}<Icon size={18} strokeWidth={1.8} /></button>;
+          const active = id === "transfers" ? panelVisible && panelTab === "transfers" : view === id;
+          return <button key={id} type="button" title={label} aria-label={label} aria-current={active ? "page" : undefined} onClick={() => void execute(activityCommand[id])} className={`relative grid size-10 place-items-center rounded-xl transition-colors ${active ? "bg-[#4f7cff]/12 text-[#89a5ff]" : "text-zinc-600 hover:bg-white/[0.035] hover:text-zinc-400"}`}>{active && <span className="absolute -left-1.5 h-5 w-0.5 rounded-r-full bg-[#6f91ff]" />}<Icon size={18} strokeWidth={1.8} /></button>;
         })}
       </div>
     </nav>

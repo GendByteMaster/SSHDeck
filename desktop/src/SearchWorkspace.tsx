@@ -122,7 +122,7 @@ export function SearchWorkspace({ servers, onConnectServer }: Props) {
   const { tunnels, statuses } = useTunnels();
   const { transfers } = useTransfers();
   const { commands, execute } = useCommands();
-  const { choosePanel, setSelectedServer, setSelectedTunnel } = useWorkbench();
+  const { setSelectedServer, setSelectedTunnel } = useWorkbench();
 
   const loadQuickCommands = useCallback(async () => {
     try {
@@ -235,9 +235,9 @@ export function SearchWorkspace({ servers, onConnectServer }: Props) {
           meta: `${server?.name ?? "Unknown server"} · ${status?.state ?? "stopped"}`,
           score: score + (status?.state === "running" ? 8 : 0),
           actionLabel: "Open",
-          action: () => {
+          action: async () => {
             setSelectedTunnel({ id: tunnel.id, name: tunnel.name, state: status?.state ?? "stopped" });
-            choosePanel("ports");
+            await execute("workbench.panel.ports");
           },
         });
       }
@@ -266,7 +266,7 @@ export function SearchWorkspace({ servers, onConnectServer }: Props) {
           meta: server?.name ?? transfer.remotePath,
           score: score + (transfer.state === "running" ? 8 : 0),
           actionLabel: "Open",
-          action: () => choosePanel("transfers"),
+          action: async () => { await execute("workbench.panel.transfers"); },
         });
       }
     }
@@ -313,7 +313,6 @@ export function SearchWorkspace({ servers, onConnectServer }: Props) {
       .sort((left, right) => right.score - left.score || left.title.localeCompare(right.title))
       .slice(0, 80);
   }, [
-    choosePanel,
     commands,
     execute,
     filter,

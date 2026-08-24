@@ -5,7 +5,10 @@ import type { FeatureReadiness } from "../workbenchFeatures";
 export type CommandId =
   | "workbench.commandPalette.open"
   | "workbench.shortcuts.open"
+  | "workbench.view.servers"
+  | "workbench.view.sftp"
   | "workbench.view.search"
+  | "workbench.view.ports"
   | "workbench.view.sessions"
   | "workbench.view.history"
   | "workbench.view.settings"
@@ -113,6 +116,22 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         run: () => setShortcutsOpen((value) => !value),
       },
       {
+        id: "workbench.view.servers",
+        title: "Show Servers Workspace",
+        description: "Open the primary server registry",
+        category: "Workbench",
+        enabled: true,
+        run: () => workbench.showPrimaryView("servers"),
+      },
+      {
+        id: "workbench.view.sftp",
+        title: "Show Remote Files",
+        description: "Open the SFTP remote files workspace",
+        category: "Workbench",
+        enabled: true,
+        run: () => workbench.showPrimaryView("sftp"),
+      },
+      {
         id: "workbench.view.search",
         title: "Show Workbench Search",
         description: "Search servers, sessions, history, ports, transfers, Quick Commands, and SSHDeck commands",
@@ -120,6 +139,14 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         shortcut: "Ctrl+Shift+F",
         enabled: true,
         run: workbench.requestShowSearchWorkspace,
+      },
+      {
+        id: "workbench.view.ports",
+        title: "Show Port Forwarding Workspace",
+        description: "Open the full SSH tunnel workspace",
+        category: "Workbench",
+        enabled: true,
+        run: () => workbench.showPrimaryView("ports"),
       },
       {
         id: "workbench.view.sessions",
@@ -166,11 +193,10 @@ export function CommandProvider({ children }: { children: ReactNode }) {
       {
         id: "server.focusSearch",
         title: "Focus Server Search",
-        description: workbench.primaryVisible ? "Move focus to the server filter" : "Servers sidebar is hidden",
+        description: "Show Servers and focus the server filter",
         category: "Servers",
         shortcut: "Ctrl+Shift+K",
-        enabled: workbench.primaryVisible,
-        availabilityReason: workbench.primaryVisible ? undefined : "Show the Servers sidebar first",
+        enabled: true,
         run: workbench.requestFocusServerSearch,
       },
       {
@@ -269,8 +295,8 @@ export function CommandProvider({ children }: { children: ReactNode }) {
       },
       {
         id: "workbench.primarySidebar.toggle",
-        title: "Toggle Servers Sidebar",
-        description: "Show or hide the primary server sidebar",
+        title: "Toggle Primary Sidebar",
+        description: "Show or hide the primary workspace sidebar",
         category: "Workbench",
         shortcut: "Ctrl+B",
         enabled: true,
@@ -365,6 +391,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
     workbench.setPanelVisible,
     workbench.setPrimaryVisible,
     workbench.setSecondaryVisible,
+    workbench.showPrimaryView,
   ]);
 
   const commandMap = useMemo(() => new Map(commands.map((command) => [command.id, command])), [commands]);
