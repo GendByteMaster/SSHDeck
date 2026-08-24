@@ -184,32 +184,45 @@ Implemented in PR #18.
 
 ### Phase 8 — Automated + Windows runtime release gate ⏳
 
-Remaining release gate.
+Automated release infrastructure is implemented in PR #19 and has passed on Linux and `windows-latest`. Final completion still requires the local functional Windows smoke against a real/disposable SSH server.
 
-Automated requirements:
+Automated gates now cover:
 
 - Rust format;
 - Clippy;
 - Rust tests;
+- zero-dependency Workbench UI contract checks;
 - frontend TypeScript/Vite build;
+- Tauri backend tests;
 - Tauri backend check;
-- add targeted automated coverage for Workbench command/navigation invariants where practical;
-- add/verify a Windows CI path suitable for desktop release confidence.
+- dedicated Windows desktop CI;
+- real Windows debug Tauri executable build;
+- Windows process-start smoke that fails if `sshdeck-desktop.exe` exits during the startup window.
 
-Windows runtime smoke coverage must verify ready product surfaces, including:
+The Workbench contract gate protects key Phase 0–7 invariants, including:
 
-- Servers and OpenSSH import/export;
-- terminal sessions, navigation, reconnect and close;
-- Remote Files + SFTP diagnostics;
-- Transfers;
-- Ports;
-- Sessions and History;
-- Logs;
-- Search;
-- Settings and persistence;
-- Activity Bar, menu, Command Palette and shortcuts;
-- primary/secondary sidebars and Bottom Panel;
-- representative loading, empty, disabled, error and destructive-confirmation states.
+- every ready Activity Bar and Bottom Panel destination has a shared `CommandService` route;
+- the duplicate Bottom Panel terminal command cannot be reintroduced;
+- primary workspace selection remains in `WorkbenchContext` rather than private Sidebar state;
+- server-search focus uses the shared Servers route and deferred DOM focus;
+- ready-but-unavailable palette commands remain discoverable with an availability reason;
+- declared keyboard shortcuts have real keybinding handlers;
+- Search and Inspector reuse shared Ports/Transfers commands instead of owning panel navigation.
+
+The local Windows runtime gate is `scripts/windows-runtime-smoke.ps1`. It runs the build gates, launches SSHDeck, and requires explicit confirmation of ten functional checks covering:
+
+- implemented Activity Bar destinations;
+- Command Palette / menu routing and unavailable-command reasons;
+- Bottom Panel Ports / Logs / Transfers;
+- absence of enabled no-op/placeholder controls;
+- SFTP staged diagnostics;
+- transfer queue cancel/retry behavior;
+- tunnel synchronization across Ports / Inspector / Bottom Panel;
+- session synchronization across tabs / Sessions workspace;
+- workspace-layout restore setting behavior;
+- structured-log secret/key redaction.
+
+The functional smoke is intentionally not faked in hosted CI: real SSH/SFTP workflows require an actual test server and credentials. Phase 8 becomes complete only after the local script reports all ten checks passed.
 
 ---
 
@@ -226,9 +239,9 @@ Completed:
 7. PR #15 — versioned Settings ✅
 8. PR #18 — navigation / UX consistency ✅
 
-Remaining:
+Current:
 
-9. Phase 8 release-gate work → `dev/master`
+9. PR #19 — automated Windows/runtime release gate; local functional Windows smoke remains before milestone closure ⏳
 
 ---
 
@@ -242,6 +255,6 @@ The milestone is complete only when:
 - no `ready` command opens placeholder-only content;
 - equivalent navigation surfaces resolve through shared command paths;
 - existing SSH/SFTP/transfers/diagnostics/tunnel/session/history/log/search/settings flows remain green;
-- automated release gates pass;
-- Windows runtime smoke test passes;
+- automated Linux + Windows release gates pass;
+- Windows runtime functional smoke test passes locally;
 - README describes only shipped behavior.
