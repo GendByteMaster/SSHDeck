@@ -23,6 +23,8 @@ The following areas already have real behavior behind the UI:
 - server search/filter in the Servers sidebar;
 - SSH sessions and central PTY terminal;
 - session tabs, close, reconnect, next/previous/select shortcuts;
+- Sessions workspace with All / Active / Issues filters, focus, reconnect, close, diagnostics, and auto-reconnect controls;
+- shared logical session state across tabs, Activity Bar, Inspector, menu, Command Palette, and shortcuts;
 - server status, latency, auth state and uptime probes;
 - SFTP Remote Files: listing, navigation, mkdir, rename, safe delete, upload/download;
 - SFTP staged diagnostics;
@@ -43,9 +45,9 @@ Current production state:
 - Servers — implemented;
 - Remote Files — implemented;
 - Port Forwarding — implemented;
+- Sessions — implemented;
 - Transfers — implemented;
 - Search — planned and hidden until implemented;
-- Sessions — planned and hidden until implemented;
 - History — planned and hidden until implemented;
 - Settings — planned and hidden until implemented.
 
@@ -69,7 +71,7 @@ The Inspector is functional and currently contains several real product features
 - Quick Commands;
 - Port Forwarding summary backed by the shared tunnel provider.
 
-Dedicated Workbench views should continue to reuse shared state instead of creating duplicate polling or lifecycle ownership.
+Dedicated Workbench views continue to reuse shared state instead of creating duplicate polling or lifecycle ownership.
 
 ---
 
@@ -125,7 +127,9 @@ Rules:
 
 ### Shared lifecycle ownership
 
-Subsystems with background state must have one owner. Phase 1 applies this to SSH tunnels:
+Subsystems with background or cross-view state must have one logical owner.
+
+Phase 1 applies this to SSH tunnels:
 
 ```text
 TunnelProvider
@@ -143,7 +147,32 @@ Consumers
 └── CommandService
 ```
 
-No consumer may create an independent tunnel polling/restart loop.
+Phase 2 applies the same rule to sessions while keeping terminal runtime concerns separate:
+
+```text
+SessionProvider
+├── current session list
+├── active selection
+├── persisted history
+├── auto-reconnect preference
+└── session navigation / command routing
+
+App runtime adapter
+├── system OpenSSH / Tauri PTY lifecycle
+├── native session status polling
+├── bounded reconnect execution
+├── xterm instances
+└── in-memory password-prompt handling
+
+Consumers
+├── Session tabs
+├── Sessions Activity workspace
+├── Inspector
+├── Workbench status snapshot
+└── CommandService / menu / shortcuts
+```
+
+Views must not create independent tunnel or session polling/restart loops.
 
 ---
 
@@ -176,21 +205,23 @@ Acceptance delivered:
 - Ports command exposed through CommandService / View menu / Command Palette;
 - one `TunnelProvider` owns process polling and restart state.
 
-### Phase 2 — Sessions workspace
+### Phase 2 — Sessions workspace ✅
 
-Build a dedicated Sessions workspace around the existing PTY/session lifecycle.
+Completed in PR #11.
 
-Required behavior:
+Acceptance delivered:
 
-- list all open sessions;
-- active / reconnecting / disconnected / failed state;
-- server identity and session duration;
-- activate/focus a session;
-- reconnect;
-- close;
-- reconnect-attempt state;
-- empty/loading/error states;
-- Activity Bar item becomes `ready` only when complete.
+- dedicated Activity Bar Sessions workspace;
+- All / Active / Issues filtering;
+- active / reconnecting / disconnected / failed states;
+- server identity, session duration, exit code and signal diagnostics;
+- activate/focus, reconnect and close controls;
+- per-session auto-reconnect control and reconnect-attempt state;
+- empty and history-load error states;
+- shared session navigation for tabs, menu, Command Palette and shortcuts;
+- `Show Sessions Workspace` reveals the primary sidebar when necessary;
+- `SessionProvider` owns logical session state while `App` remains the native PTY/xterm runtime adapter;
+- no duplicate session polling loop was introduced.
 
 ### Phase 3 — Full History workspace
 
@@ -284,10 +315,10 @@ Completed:
 
 1. `refactor/workbench-feature-registry` — PR #9 ✅
 2. `feat/ports-workspace` — PR #10 ✅
+3. `feat/sessions-workspace` — PR #11 ✅
 
 Next:
 
-3. `feat/sessions-workspace`
 4. `feat/history-workspace`
 5. `feat/workbench-logs`
 6. `feat/workbench-search`
@@ -307,6 +338,6 @@ This milestone is complete only when:
 - no clickable control is a no-op;
 - no `ready` command opens placeholder-only content;
 - menu/Command Palette/shortcuts/buttons resolve through shared command paths;
-- existing SSH/SFTP/transfers/diagnostics/tunnel flows remain green;
+- existing SSH/SFTP/transfers/diagnostics/tunnel/session flows remain green;
 - Windows runtime smoke test passes;
 - README describes only shipped behavior.
