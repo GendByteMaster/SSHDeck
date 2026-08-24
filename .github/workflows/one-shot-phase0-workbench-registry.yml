@@ -1,0 +1,275 @@
+name: one-shot phase0 workbench registry
+
+on:
+  push:
+    branches: [refactor/workbench-feature-registry]
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/workbench-feature-registry
+
+      - name: Apply Phase 0 UI truthfulness refactor
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str):
+              file = Path(path)
+              text = file.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected block not found in {path}: {old[:120]!r}")
+              file.write_text(text.replace(old, new, 1))
+
+          sidebar = "desktop/src/SidebarV2.tsx"
+          replace_once(
+              sidebar,
+              'import { useWorkbench } from "./WorkbenchContext";\n',
+              'import { useWorkbench } from "./WorkbenchContext";\nimport { ActivityFeatureId, productionActivityFeatures } from "./workbenchFeatures";\n',
+          )
+          replace_once(
+              sidebar,
+              '''const activityItems = [
+            { id: "servers" as const, label: "Servers", icon: Server, enabled: true },
+            { id: "sftp" as const, label: "Remote files", icon: FolderTree, enabled: true },
+            { id: null, label: "Search", icon: Search, enabled: false },
+            { id: null, label: "Port forwarding", icon: Waypoints, enabled: false },
+            { id: null, label: "Sessions", icon: TerminalSquare, enabled: false },
+            { id: null, label: "History", icon: History, enabled: false },
+            { id: null, label: "Transfers", icon: FolderClock, enabled: true },
+          ];
+          '''.replace('          ', ''),
+              '''const activityIcons: Record<ActivityFeatureId, typeof Server> = {
+            servers: Server,
+            sftp: FolderTree,
+            search: Search,
+            ports: Waypoints,
+            sessions: TerminalSquare,
+            history: History,
+            transfers: FolderClock,
+            settings: Settings,
+          };
+
+          const activityItems = productionActivityFeatures().map((feature) => ({
+            ...feature,
+            icon: activityIcons[feature.id],
+          }));
+          '''.replace('          ', ''),
+          )
+          replace_once(
+              sidebar,
+              '  const popupCommands = useCommandContextMenu();\n  const allServers = servers;\n',
+              '''  const popupCommands = useCommandContextMenu();
+            const allServers = servers;
+
+            function activateActivity(id: ActivityFeatureId) {
+              if (id === "servers" || id === "sftp") {
+                setView(id);
+                return;
+              }
+              if (id === "transfers") choosePanel("transfers");
+            }
+          '''.replace('          ', ''),
+          )
+          replace_once(
+              sidebar,
+              '''        {activityItems.map(({ id, label, icon: Icon, enabled }, index) => {
+            const active = id !== null ? view === id : label === "Transfers" && panelVisible && panelTab === "transfers";
+            return <button
+              key={`${label}-${index}`}
+              type="button"
+              title={enabled ? label : `${label} · coming soon`}
+              aria-label={label}
+              aria-current={active ? "page" : undefined}
+              disabled={!enabled}
+              onClick={() => { if (id) setView(id); else if (label === "Transfers") choosePanel("transfers"); }}
+              className={`relative grid size-10 place-items-center rounded-xl transition-colors ${active ? "bg-[#4f7cff]/12 text-[#89a5ff]" : "text-zinc-600 hover:bg-white/[0.035] hover:text-zinc-400 disabled:cursor-default disabled:opacity-65"}`}
+            >
+              {active && <span className="absolute -left-1.5 h-5 w-0.5 rounded-r-full bg-[#6f91ff]" />}
+              <Icon size={18} strokeWidth={1.8} />
+            </button>;
+          })}
+          '''.replace('          ', ''),
+              '''        {activityItems.map(({ id, label, icon: Icon }) => {
+            const active = id === "transfers"
+              ? panelVisible && panelTab === "transfers"
+              : (id === "servers" || id === "sftp") && view === id;
+            return <button
+              key={id}
+              type="button"
+              title={label}
+              aria-label={label}
+              aria-current={active ? "page" : undefined}
+              onClick={() => activateActivity(id)}
+              className={`relative grid size-10 place-items-center rounded-xl transition-colors ${active ? "bg-[#4f7cff]/12 text-[#89a5ff]" : "text-zinc-600 hover:bg-white/[0.035] hover:text-zinc-400"}`}
+            >
+              {active && <span className="absolute -left-1.5 h-5 w-0.5 rounded-r-full bg-[#6f91ff]" />}
+              <Icon size={18} strokeWidth={1.8} />
+            </button>;
+          })}
+          '''.replace('          ', ''),
+          )
+          replace_once(
+              sidebar,
+              '      <div className="mt-auto"><button type="button" title="Settings · coming soon" aria-label="Settings" disabled className="grid size-10 place-items-center rounded-xl text-zinc-600 opacity-65"><Settings size={18} strokeWidth={1.8} /></button></div>\n',
+              '',
+          )
+
+          commands = "desktop/src/commands/CommandService.tsx"
+          replace_once(
+              commands,
+              'import { useWorkbench } from "../WorkbenchContext";\n',
+              'import { useWorkbench } from "../WorkbenchContext";\nimport type { FeatureReadiness } from "../workbenchFeatures";\n',
+          )
+          for command_id in (
+              '  | "workbench.panel.terminal"\n',
+              '  | "workbench.panel.ports"\n',
+              '  | "workbench.panel.logs"\n',
+          ):
+              replace_once(commands, command_id, '')
+          replace_once(
+              commands,
+              '''export type CommandDefinition = {
+            id: CommandId;
+            title: string;
+            description: string;
+            category: CommandCategory;
+            shortcut?: string;
+            enabled: boolean;
+            run: () => void | Promise<void>;
+          };
+          '''.replace('          ', ''),
+              '''export type CommandDefinition = {
+            id: CommandId;
+            title: string;
+            description: string;
+            category: CommandCategory;
+            shortcut?: string;
+            readiness: FeatureReadiness;
+            enabled: boolean;
+            availabilityReason?: string;
+            run: () => void | Promise<void>;
+          };
+
+          type CommandSpec = Omit<CommandDefinition, "readiness">;
+
+          function markReady(commands: CommandSpec[]): CommandDefinition[] {
+            return commands.map((command) => ({ ...command, readiness: "ready" }));
+          }
+          '''.replace('          ', ''),
+          )
+          replace_once(commands, '    const fixed: CommandDefinition[] = [\n', '    const fixed = markReady([\n')
+
+          placeholder_blocks = [
+              '''      {
+            id: "workbench.panel.terminal",
+            title: "Show Terminal Panel",
+            description: "Open the Terminal section of the bottom panel",
+            category: "Panel",
+            enabled: true,
+            run: () => workbench.choosePanel("terminal"),
+          },
+          ''',
+              '''      {
+            id: "workbench.panel.ports",
+            title: "Show Ports Panel",
+            description: "Open managed SSH port forwarding",
+            category: "Panel",
+            enabled: true,
+            run: () => workbench.choosePanel("ports"),
+          },
+          ''',
+              '''      {
+            id: "workbench.panel.logs",
+            title: "Show Logs Panel",
+            description: "Open SSH session diagnostics",
+            category: "Panel",
+            enabled: true,
+            run: () => workbench.choosePanel("logs"),
+          },
+          ''',
+          ]
+          for block in placeholder_blocks:
+              replace_once(commands, block.replace('          ', ''), '')
+
+          replace_once(
+              commands,
+              '''      {
+            id: "workbench.panel.transfers",
+            title: "Show Transfers Panel",
+            description: "Open the transfer queue",
+            category: "Panel",
+            enabled: true,
+            run: () => workbench.choosePanel("transfers"),
+          },
+            ];
+
+            const sessions = sessionCommandIds.map((id, index): CommandDefinition => ({
+          '''.replace('          ', ''),
+              '''      {
+            id: "workbench.panel.transfers",
+            title: "Show Transfers Panel",
+            description: "Open the transfer queue",
+            category: "Panel",
+            enabled: true,
+            run: () => workbench.choosePanel("transfers"),
+          },
+            ]);
+
+            const sessions = markReady(sessionCommandIds.map((id, index): CommandSpec => ({
+          '''.replace('          ', ''),
+          )
+          replace_once(
+              commands,
+              '''      run: () => workbench.requestSelectSession(index),
+            }));
+
+            return [...fixed, ...sessions];
+          '''.replace('          ', ''),
+              '''      run: () => workbench.requestSelectSession(index),
+            })));
+
+            return [...fixed, ...sessions];
+          '''.replace('          ', ''),
+          )
+          replace_once(
+              commands,
+              '      if (!command?.enabled) return false;\n',
+              '      if (!command || command.readiness === "planned" || !command.enabled) return false;\n',
+          )
+
+          palette = "desktop/src/CommandPalette.tsx"
+          replace_once(
+              palette,
+              '    () => commands.filter((command) => command.id !== "workbench.commandPalette.open" && command.enabled),\n',
+              '    () => commands.filter((command) => command.id !== "workbench.commandPalette.open" && command.readiness !== "planned" && command.enabled),\n',
+          )
+
+          app_menu = "desktop/src/commands/AppMenuBar.tsx"
+          replace_once(
+              app_menu,
+              '  return !command.id.startsWith("session.select.");\n',
+              '  return command.readiness !== "planned" && !command.id.startsWith("session.select.");\n',
+          )
+
+          native_menu = "desktop/src/commands/NativeMenu.tsx"
+          replace_once(
+              native_menu,
+              '      const visibleCommands = commands.filter((command) => !command.id.startsWith("session.select."));\n',
+              '      const visibleCommands = commands.filter((command) => command.readiness !== "planned" && !command.id.startsWith("session.select."));\n',
+          )
+
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/one-shot-phase0-workbench-registry.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add desktop/src .github/workflows/one-shot-phase0-workbench-registry.yml
+          git commit -m "refactor(workbench): enforce truthful feature readiness"
+          git push origin HEAD:refactor/workbench-feature-registry
