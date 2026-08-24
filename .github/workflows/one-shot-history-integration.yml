@@ -1,0 +1,192 @@
+name: one-shot history workspace integration
+
+on:
+  push:
+    branches: [feat/history-workspace]
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/history-workspace
+
+      - name: Apply history integration
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str):
+              file = Path(path)
+              text = file.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected block not found in {path}: {old[:180]!r}")
+              file.write_text(text.replace(old, new, 1))
+
+          replace_once("desktop/src-tauri/src/lib.rs", "    items.truncate(30);", "    items.truncate(200);")
+
+          path = "desktop/src/sessionLifecycle.ts"
+          replace_once(path, 'export type SessionState = "active" | "reconnecting" | "disconnected" | "failed";\n', 'export type SessionState = "active" | "reconnecting" | "disconnected" | "failed";\n\nexport const SESSION_HISTORY_LIMIT = 200;\n')
+          replace_once(path, '''  atMs: number;
+            durationMs: number;
+            exitCode: number | null;
+          };''', '''  atMs: number;
+            startedAtMs?: number | null;
+            durationMs: number;
+            exitCode: number | null;
+            signal?: string | null;
+          };''')
+          replace_once(path, 'workspace.sessionHistory.slice(0, 30)', 'workspace.sessionHistory.slice(0, SESSION_HISTORY_LIMIT)')
+          replace_once(path, 'items.slice(0, 30)', 'items.slice(0, SESSION_HISTORY_LIMIT)')
+
+          path = "desktop/src/SessionContext.tsx"
+          replace_once(path, 'import { hydrateSessionHistory, saveSessionHistory, SessionHistoryItem, SessionView } from "./sessionLifecycle";', 'import { hydrateSessionHistory, saveSessionHistory, SESSION_HISTORY_LIMIT, SessionHistoryItem, SessionView } from "./sessionLifecycle";')
+          replace_once(path, '''  history: SessionHistoryItem[];
+            historyError: string | null;''', '''  history: SessionHistoryItem[];
+            historyLoading: boolean;
+            historyError: string | null;''')
+          replace_once(path, '''  updateHistory: (updater: (current: SessionHistoryItem[]) => SessionHistoryItem[]) => void;
+            toggleAutoReconnect:''', '''  updateHistory: (updater: (current: SessionHistoryItem[]) => SessionHistoryItem[]) => void;
+            clearHistory: () => void;
+            toggleAutoReconnect:''')
+          replace_once(path, '''  const [history, setHistory] = useState<SessionHistoryItem[]>([]);
+            const [historyError, setHistoryError] = useState<string | null>(null);''', '''  const [history, setHistory] = useState<SessionHistoryItem[]>([]);
+            const [historyLoading, setHistoryLoading] = useState(true);
+            const [historyError, setHistoryError] = useState<string | null>(null);''')
+          replace_once(path, '''    void hydrateSessionHistory()
+                .then((items) => { if (!cancelled) setHistory(items); })
+                .catch((value) => { if (!cancelled) setHistoryError(`Could not load session history: ${String(value)}`); });''', '''    void hydrateSessionHistory()
+                .then((items) => { if (!cancelled) setHistory(items); })
+                .catch((value) => { if (!cancelled) setHistoryError(`Could not load session history: ${String(value)}`); })
+                .finally(() => { if (!cancelled) setHistoryLoading(false); });''')
+          replace_once(path, 'const next = updater(current).slice(0, 30);', 'const next = updater(current).slice(0, SESSION_HISTORY_LIMIT);')
+          replace_once(path, '''  const appendHistory = useCallback((item: Omit<SessionHistoryItem, "id">) => {
+              updateHistory((current) => [{ ...item, id: `${item.atMs}-${Math.random().toString(36).slice(2, 8)}` }, ...current]);
+            }, [updateHistory]);''', '''  const appendHistory = useCallback((item: Omit<SessionHistoryItem, "id">) => {
+              const session = sessionsRef.current.find((value) => value.serverId === item.serverId);
+              const enriched: Omit<SessionHistoryItem, "id"> = {
+                ...item,
+                startedAtMs: item.startedAtMs ?? session?.startedAtMs ?? (item.durationMs > 0 ? Math.max(0, item.atMs - item.durationMs) : null),
+                signal: item.signal ?? session?.signal ?? null,
+              };
+              updateHistory((current) => [{ ...enriched, id: `${item.atMs}-${Math.random().toString(36).slice(2, 8)}` }, ...current]);
+            }, [updateHistory]);
+
+            const clearHistory = useCallback(() => updateHistory(() => []), [updateHistory]);''')
+          replace_once(path, '''    history,
+              historyError,
+              setSessions,''', '''    history,
+              historyLoading,
+              historyError,
+              setSessions,''')
+          replace_once(path, '''    appendHistory,
+              updateHistory,
+              toggleAutoReconnect,''', '''    appendHistory,
+              updateHistory,
+              clearHistory,
+              toggleAutoReconnect,''')
+          replace_once(path, '''    history,
+              historyError,
+              registerRuntimeActions,''', '''    history,
+              historyError,
+              historyLoading,
+              registerRuntimeActions,''')
+          replace_once(path, '''    toggleAutoReconnect,
+              updateHistory,''', '''    toggleAutoReconnect,
+              updateHistory,
+              clearHistory,''')
+
+          path = "desktop/src/App.tsx"
+          replace_once(path, 'appendHistory({ serverId: server.id, serverName: server.name, state: "reconnected", atMs: Date.now(), durationMs: 0, exitCode: null });', 'appendHistory({ serverId: server.id, serverName: server.name, state: "reconnected", atMs: Date.now(), startedAtMs: replacement.startedAtMs, durationMs: 0, exitCode: null, signal: null });')
+          replace_once(path, 'appendHistory({ serverId: tab.serverId, serverName: tab.name, state: endedState, atMs: status.endedAtMs ?? Date.now(), durationMs: status.durationMs, exitCode: status.exitCode });', 'appendHistory({ serverId: tab.serverId, serverName: tab.name, state: endedState, atMs: status.endedAtMs ?? Date.now(), startedAtMs: status.startedAtMs, durationMs: status.durationMs, exitCode: status.exitCode, signal: status.signal });')
+          replace_once(path, 'appendHistory({ serverId: tab.serverId, serverName: tab.name, state: "closed", atMs: Date.now(), durationMs: tab.durationMs, exitCode: tab.exitCode });', 'appendHistory({ serverId: tab.serverId, serverName: tab.name, state: "closed", atMs: Date.now(), startedAtMs: tab.startedAtMs, durationMs: tab.durationMs, exitCode: tab.exitCode, signal: tab.signal });')
+
+          path = "desktop/src/WorkbenchContext.tsx"
+          replace_once(path, '''  requestShowSessionsWorkspace: () => void;
+            requestSelectSession:''', '''  requestShowSessionsWorkspace: () => void;
+            requestShowHistoryWorkspace: () => void;
+            requestSelectSession:''')
+          replace_once(path, '''  showSessionsWorkspace?: () => void;
+            selectSession?:''', '''  showSessionsWorkspace?: () => void;
+            showHistoryWorkspace?: () => void;
+            selectSession?:''')
+          replace_once(path, '''  const requestShowSessionsWorkspace = useCallback(() => {
+              setPrimaryVisible(true);
+              appActions.current.showSessionsWorkspace?.();
+            }, []);''', '''  const requestShowSessionsWorkspace = useCallback(() => {
+              setPrimaryVisible(true);
+              appActions.current.showSessionsWorkspace?.();
+            }, []);
+            const requestShowHistoryWorkspace = useCallback(() => {
+              setPrimaryVisible(true);
+              appActions.current.showHistoryWorkspace?.();
+            }, []);''')
+          replace_once(path, '''    requestShowSessionsWorkspace,
+              requestSelectSession,''', '''    requestShowSessionsWorkspace,
+              requestShowHistoryWorkspace,
+              requestSelectSession,''')
+          replace_once(path, '''    requestShowSessionsWorkspace,
+              requestStartSelectedTunnel,''', '''    requestShowSessionsWorkspace,
+              requestShowHistoryWorkspace,
+              requestStartSelectedTunnel,''')
+
+          path = "desktop/src/SidebarV2.tsx"
+          replace_once(path, 'import { PortsWorkspace } from "./PortsWorkspace";\n', 'import { HistoryWorkspace } from "./HistoryWorkspace";\nimport { PortsWorkspace } from "./PortsWorkspace";\n')
+          replace_once(path, 'type SidebarView = "servers" | "sftp" | "ports" | "sessions";', 'type SidebarView = "servers" | "sftp" | "ports" | "sessions" | "history";')
+          replace_once(path, '''      showSessionsWorkspace: () => setView("sessions"),''', '''      showSessionsWorkspace: () => setView("sessions"),
+              showHistoryWorkspace: () => setView("history"),''')
+          replace_once(path, 'id === "ports" || id === "sessions"', 'id === "ports" || id === "sessions" || id === "history"')
+          replace_once(path, 'id === "ports" || id === "sessions") && view === id', 'id === "ports" || id === "sessions" || id === "history") && view === id')
+          replace_once(path, '''view === "ports" ? <PortsWorkspace servers={allServers} activeServerId={selectedServer.id} /> : <SessionsWorkspace />''', '''view === "ports" ? <PortsWorkspace servers={allServers} activeServerId={selectedServer.id} /> : view === "sessions" ? <SessionsWorkspace /> : <HistoryWorkspace servers={allServers} onReconnectServer={(serverId) => { const server = allServers.find((item) => item.id === serverId); if (server) onConnect(server); }} />''')
+
+          path = "desktop/src/commands/CommandService.tsx"
+          replace_once(path, '  | "workbench.view.sessions"\n', '  | "workbench.view.sessions"\n  | "workbench.view.history"\n')
+          replace_once(path, '''      {
+                id: "workbench.view.sessions",
+                title: "Show Sessions Workspace",
+                description: "Inspect and control all current SSH sessions",
+                category: "Sessions",
+                enabled: true,
+                run: workbench.requestShowSessionsWorkspace,
+              },''', '''      {
+                id: "workbench.view.sessions",
+                title: "Show Sessions Workspace",
+                description: "Inspect and control all current SSH sessions",
+                category: "Sessions",
+                enabled: true,
+                run: workbench.requestShowSessionsWorkspace,
+              },
+              {
+                id: "workbench.view.history",
+                title: "Show Session History",
+                description: "Review persisted SSH session history",
+                category: "Sessions",
+                enabled: true,
+                run: workbench.requestShowHistoryWorkspace,
+              },''')
+          replace_once(path, '''    workbench.requestShowSessionsWorkspace,
+              workbench.requestStartSelectedTunnel,''', '''    workbench.requestShowSessionsWorkspace,
+              workbench.requestShowHistoryWorkspace,
+              workbench.requestStartSelectedTunnel,''')
+
+          path = "desktop/src/workbenchFeatures.ts"
+          replace_once(path, '''    id: "history",
+                label: "History",
+                description: "Review full SSH session history and reconnect from previous sessions.",
+                readiness: "planned",''', '''    id: "history",
+                label: "History",
+                description: "Review full SSH session history and reconnect from previous sessions.",
+                readiness: "ready",''')
+
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/one-shot-history-integration.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add desktop/src desktop/src-tauri/src/lib.rs .github/workflows/one-shot-history-integration.yml
+          git commit -m "feat(history): integrate full history workspace"
+          git push origin HEAD:feat/history-workspace
