@@ -2,7 +2,7 @@ import { Menu } from "@tauri-apps/api/menu";
 import { useEffect } from "react";
 import { CommandCategory, CommandDefinition, useCommands } from "./CommandService";
 
-const categoryOrder: CommandCategory[] = ["Servers", "Sessions", "Workbench", "Panel"];
+const categoryOrder: CommandCategory[] = ["Servers", "Sessions", "Tunnels", "Workbench", "Panel"];
 
 function accelerator(shortcut?: string) {
   if (!shortcut) return undefined;
