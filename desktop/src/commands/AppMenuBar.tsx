@@ -87,7 +87,7 @@ function MenuItems({
         >
           <span className="min-w-0 flex-1">
             <strong className="block truncate text-[11.5px] font-medium text-zinc-200">{command.title}</strong>
-            <small className="mt-0.5 block truncate text-[9.5px] leading-4 text-zinc-600 group-enabled:group-hover:text-zinc-500">{command.description}</small>
+            <small className="mt-0.5 block truncate text-[9.5px] leading-4 text-zinc-600">{command.description}</small>
           </span>
           <Shortcut value={command.shortcut} />
         </button>
@@ -101,12 +101,6 @@ export function AppMenuBar() {
   const [openGroup, setOpenGroup] = useState<MenuGroupId | null>(null);
   const rootRef = useRef<HTMLElement | null>(null);
   const macOs = useMemo(isMacOs, []);
-
-  useEffect(() => {
-    if (macOs) return;
-    document.documentElement.classList.add("sshdeck-has-custom-menu");
-    return () => document.documentElement.classList.remove("sshdeck-has-custom-menu");
-  }, [macOs]);
 
   useEffect(() => {
     if (macOs) return;
@@ -165,7 +159,10 @@ export function AppMenuBar() {
     <span className="flex-1" />
     <button
       type="button"
-      onClick={() => void execute("workbench.commandPalette.open")}
+      onClick={() => {
+        setOpenGroup(null);
+        void execute("workbench.commandPalette.open");
+      }}
       className="flex h-7 min-w-0 items-center gap-2 rounded-lg border border-white/[0.055] bg-white/[0.025] px-2.5 text-[10.5px] text-zinc-600 transition-colors hover:border-white/[0.09] hover:bg-white/[0.045] hover:text-zinc-400"
       title="Show Command Palette"
     >
