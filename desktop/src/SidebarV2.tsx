@@ -1,4 +1,4 @@
-import { Copy, Download, Pencil, Plus, Search, Server, Star, Trash2 } from "lucide-react";
+import { Copy, Download, FolderClock, History, Pencil, Plus, Search, Server, Settings, Star, TerminalSquare, Trash2, Waypoints } from "lucide-react";
 import { ServerStatus } from "./serverStatus";
 
 export type SidebarServer = {
@@ -61,20 +61,34 @@ function ServerItem({ server, status, checking, onConnect, onFavorite, onExport,
 
 export function SidebarV2({ favorites, groups, query, statuses, checking, onQueryChange, onAdd, onImport, onConnect, onFavorite, onExport, onEdit, onDelete }: Props) {
   const count = favorites.length + groups.reduce((sum, [, items]) => sum + items.length, 0);
-  return <aside className="sidebar v2-sidebar">
-    <div className="v2-brand-row">
-      <div className="brand"><div className="brand-mark">S</div><div><strong>SSHDeck</strong><span>Secure connections</span></div></div>
-      <span className="v2-server-count">{count}</span>
-    </div>
-    <div className="sidebar-actions">
-      <button className="primary" onClick={onAdd}><Plus size={15} /> Add server</button>
-      <button className="secondary" onClick={onImport}><Download size={15} /> Import SSH</button>
-    </div>
-    <div className="search"><Search size={15} /><input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search servers" /></div>
-    <div className="server-list v2-server-list">
-      {favorites.length > 0 && <section><div className="section-label">Favorites</div>{favorites.map((server) => <ServerItem key={server.id} server={server} status={statuses[server.id]} checking={checking.has(server.id)} onConnect={() => onConnect(server)} onFavorite={() => onFavorite(server)} onExport={() => onExport(server)} onEdit={() => onEdit(server)} onDelete={() => onDelete(server)} />)}</section>}
-      {groups.map(([group, items]) => <section key={group}><div className="section-label">{group}</div>{items.map((server) => <ServerItem key={server.id} server={server} status={statuses[server.id]} checking={checking.has(server.id)} onConnect={() => onConnect(server)} onFavorite={() => onFavorite(server)} onExport={() => onExport(server)} onEdit={() => onEdit(server)} onDelete={() => onDelete(server)} />)}</section>)}
-      {count === 0 && <div className="v2-sidebar-empty"><Server size={18} /><strong>No servers</strong><span>Add a server or import your OpenSSH config.</span></div>}
+  return <aside className="sidebar v2-sidebar workbench-primary">
+    <nav className="activity-bar" aria-label="Workbench navigation">
+      <div className="activity-brand">S</div>
+      <button className="activity-item active" title="Servers"><Server size={19} /></button>
+      <button className="activity-item" title="Search"><Search size={19} /></button>
+      <button className="activity-item" title="Port forwarding"><Waypoints size={19} /></button>
+      <button className="activity-item" title="Sessions"><TerminalSquare size={19} /></button>
+      <button className="activity-item" title="History"><History size={19} /></button>
+      <button className="activity-item" title="Transfers"><FolderClock size={19} /></button>
+      <span className="activity-spacer" />
+      <button className="activity-item" title="Settings"><Settings size={19} /></button>
+    </nav>
+
+    <div className="context-sidebar">
+      <div className="v2-brand-row workbench-view-title">
+        <div><span className="eyebrow">SERVERS</span><strong>Connections</strong></div>
+        <span className="v2-server-count">{count}</span>
+      </div>
+      <div className="sidebar-actions">
+        <button className="primary" onClick={onAdd}><Plus size={15} /> Add server</button>
+        <button className="secondary" onClick={onImport}><Download size={15} /> Import</button>
+      </div>
+      <div className="search"><Search size={15} /><input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search servers" /></div>
+      <div className="server-list v2-server-list">
+        {favorites.length > 0 && <section><div className="section-label">Favorites</div>{favorites.map((server) => <ServerItem key={server.id} server={server} status={statuses[server.id]} checking={checking.has(server.id)} onConnect={() => onConnect(server)} onFavorite={() => onFavorite(server)} onExport={() => onExport(server)} onEdit={() => onEdit(server)} onDelete={() => onDelete(server)} />)}</section>}
+        {groups.map(([group, items]) => <section key={group}><div className="section-label">{group}</div>{items.map((server) => <ServerItem key={server.id} server={server} status={statuses[server.id]} checking={checking.has(server.id)} onConnect={() => onConnect(server)} onFavorite={() => onFavorite(server)} onExport={() => onExport(server)} onEdit={() => onEdit(server)} onDelete={() => onDelete(server)} />)}</section>)}
+        {count === 0 && <div className="v2-sidebar-empty"><Server size={18} /><strong>No servers</strong><span>Add a server or import your OpenSSH config.</span></div>}
+      </div>
     </div>
   </aside>;
 }
