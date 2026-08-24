@@ -1,6 +1,6 @@
 import { RotateCcw, Save, Settings2, ShieldCheck, TimerReset, Workflow } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { WorkspaceSettings, useSettings } from "./SettingsContext";
+import { type WorkspaceSettings, useSettings } from "./SettingsContext";
 
 function sameSettings(left: WorkspaceSettings, right: WorkspaceSettings) {
   return left.schemaVersion === right.schemaVersion
@@ -20,7 +20,7 @@ function Toggle({ checked, onChange, label, description }: { checked: boolean; o
 
 function Section({ icon, title, description, children }: { icon: React.ReactNode; title: string; description: string; children: React.ReactNode }) {
   return <section className="rounded-2xl border border-white/[0.055] bg-[#0a0d12]/80 p-3">
-    <div className="mb-3 flex items-start gap-2.5"><span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg border border-white/[0.055] bg-white/[0.025] text-zinc-500">{icon}</span><div><strong className="block text-[12px] font-semibold text-zinc-300">{title}</strong><p className="mt-0.5 text-[10.5px] leading-4 text-zinc-650">{description}</p></div></div>
+    <div className="mb-3 flex items-start gap-2.5"><span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg border border-white/[0.055] bg-white/[0.025] text-zinc-500">{icon}</span><div><strong className="block text-[12px] font-semibold text-zinc-300">{title}</strong><p className="mt-0.5 text-[10.5px] leading-4 text-zinc-600">{description}</p></div></div>
     {children}
   </section>;
 }
@@ -42,6 +42,15 @@ export function SettingsWorkspace() {
     window.setTimeout(() => setSavedNotice(false), 1800);
   }
 
+  if (error) {
+    return <div className="flex min-h-0 flex-1 flex-col bg-[#0d1015]/92 p-3.5">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.13em] text-zinc-600">Settings</span>
+      <strong className="mt-1 text-[14px] text-zinc-300">Workspace settings unavailable</strong>
+      <div className="mt-3 rounded-xl border border-rose-400/15 bg-rose-400/[0.06] px-3 py-2.5"><p className="text-[10px] leading-4 text-rose-200/75">{error}</p><button type="button" onClick={() => void reload()} className="mt-2 rounded-lg border border-rose-300/15 px-2 py-1 text-[10px] text-rose-200">Retry load</button></div>
+      <p className="mt-3 text-[10px] leading-4 text-zinc-600">SSHDeck keeps settings-dependent actions unavailable until the persisted schema loads successfully.</p>
+    </div>;
+  }
+
   if (loading) {
     return <div className="flex min-h-0 flex-1 flex-col bg-[#0d1015]/92 p-3.5"><span className="text-[10px] font-semibold uppercase tracking-[0.13em] text-zinc-600">Settings</span><strong className="mt-1 text-[14px] text-zinc-300">Loading workspace settings…</strong></div>;
   }
@@ -49,12 +58,10 @@ export function SettingsWorkspace() {
   return <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[#0d1015]/92">
     <header className="border-b border-white/[0.055] px-3.5 pb-3 pt-3.5">
       <div className="flex items-start justify-between gap-3"><div className="min-w-0"><span className="block text-[10px] font-semibold uppercase tracking-[0.13em] text-zinc-600">Settings</span><strong className="mt-0.5 block truncate text-[14px] font-semibold tracking-[-0.01em] text-zinc-200">Workspace behavior</strong></div><span className="rounded-lg border border-white/[0.06] bg-white/[0.025] px-2 py-1 text-[9px] font-medium text-zinc-600">schema v{settings.schemaVersion}</span></div>
-      <p className="mt-2 text-[10.5px] leading-4 text-zinc-650">Persisted in SSHDeck workspace data. Runtime-backed settings take effect after Save.</p>
+      <p className="mt-2 text-[10.5px] leading-4 text-zinc-600">Persisted in SSHDeck workspace data. Runtime-backed settings take effect after Save.</p>
     </header>
 
     <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto p-3 [scrollbar-color:rgba(255,255,255,.11)_transparent] [scrollbar-width:thin]">
-      {error && <div className="rounded-xl border border-rose-400/15 bg-rose-400/[0.06] px-3 py-2.5"><strong className="block text-[11px] font-medium text-rose-300">Settings error</strong><p className="mt-1 text-[10px] leading-4 text-rose-200/70">{error}</p><button type="button" onClick={() => void reload()} className="mt-2 rounded-lg border border-rose-300/15 px-2 py-1 text-[10px] text-rose-200">Retry load</button></div>}
-
       <Section icon={<Workflow size={14} />} title="Sessions" description="Defaults for newly opened SSH sessions.">
         <Toggle checked={draft.autoReconnectDefault} onChange={(value) => setDraft({ ...draft, autoReconnectDefault: value })} label="Auto reconnect by default" description="New sessions inherit this value. Existing session preferences remain unchanged." />
       </Section>
@@ -77,7 +84,7 @@ export function SettingsWorkspace() {
         <Toggle checked={draft.restoreWorkspaceLayout} onChange={(value) => setDraft({ ...draft, restoreWorkspaceLayout: value })} label="Restore saved layout on launch" description="When disabled, SSHDeck starts with the default sidebar/panel layout while keeping the saved layout available." />
       </Section>
 
-      <div className="rounded-xl border border-dashed border-white/[0.055] px-3 py-2.5 text-[10px] leading-4 text-zinc-650">OpenSSH binary override is intentionally not exposed yet. SSHDeck currently invokes <code className="text-zinc-500">ssh</code>/<code className="text-zinc-500">sftp</code> from several backend modules, so a partial override would be misleading.</div>
+      <div className="rounded-xl border border-dashed border-white/[0.055] px-3 py-2.5 text-[10px] leading-4 text-zinc-600">OpenSSH binary override is intentionally not exposed yet. SSHDeck currently invokes <code className="text-zinc-500">ssh</code>/<code className="text-zinc-500">sftp</code> from several backend modules, so a partial override would be misleading.</div>
     </div>
 
     <footer className="border-t border-white/[0.055] bg-[#0a0d12]/95 px-3 py-2.5">
