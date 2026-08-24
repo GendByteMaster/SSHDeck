@@ -28,38 +28,37 @@ The following areas already have real behavior behind the UI:
 - SFTP staged diagnostics;
 - Transfers queue: queued/running/done/failed/cancelled, cancel/retry/clear;
 - Quick Commands and dangerous-command confirmation;
-- tunnel create/start/stop/delete, health state and auto-restart in the Inspector;
+- Ports workspace: local `-L`, remote `-R`, and SOCKS `-D` tunnel CRUD, start/stop, status, diagnostics, and auto-restart;
+- shared tunnel lifecycle across Activity Bar, Bottom Panel, Inspector, menu, and Command Palette;
 - Command Palette and keyboard shortcuts;
 - Workbench primary/secondary sidebar and bottom-panel toggles;
 - Workbench menu and status bar.
 
-### Partial or misleading surfaces
+### Partial or planned surfaces
 
 #### Activity Bar
 
-Current state:
+Current production state:
 
 - Servers — implemented;
 - Remote Files — implemented;
-- Search — disabled / not implemented as a Workbench view;
-- Port Forwarding — disabled even though tunnel functionality exists elsewhere;
-- Sessions — disabled even though active session tabs exist;
-- History — disabled even though recent session history exists in the Inspector;
+- Port Forwarding — implemented;
 - Transfers — implemented;
-- Settings — disabled / not implemented.
+- Search — planned and hidden until implemented;
+- Sessions — planned and hidden until implemented;
+- History — planned and hidden until implemented;
+- Settings — planned and hidden until implemented.
 
-The issue is not that every item is enabled. The issue is that the Workbench visually advertises product areas that do not yet have a complete navigation destination.
+The Workbench no longer advertises planned product areas as clickable production controls.
 
 #### Bottom Panel
 
-Current state:
+Current production state:
 
+- Ports — implemented;
 - Transfers — implemented;
-- Terminal — enabled but placeholder-only;
-- Ports — enabled but placeholder-only;
-- Logs — enabled but placeholder-only.
-
-This is the highest-priority UI correctness problem because these commands are reported as enabled in the command registry while their panel body is only explanatory copy.
+- Logs — planned and hidden until implemented;
+- redundant Terminal panel — removed; the central PTY remains the terminal workspace.
 
 #### Inspector
 
@@ -68,9 +67,9 @@ The Inspector is functional and currently contains several real product features
 - Server Status;
 - Connection History;
 - Quick Commands;
-- Port Forwarding.
+- Port Forwarding summary backed by the shared tunnel provider.
 
-This existing functionality should be reused and extracted instead of duplicated when dedicated Workbench views are introduced.
+Dedicated Workbench views should continue to reuse shared state instead of creating duplicate polling or lifecycle ownership.
 
 ---
 
@@ -91,403 +90,223 @@ A control is considered complete only if all of the following are true:
 
 ## Architecture correction
 
-### Problem
+### Feature readiness vs runtime availability
 
-`CommandDefinition.enabled` currently answers two different questions:
-
-- is this product capability implemented?
-- can this command run in the current runtime state?
-
-These must be separate concepts.
-
-A command such as `server.connect` may be fully implemented but disabled because no server is selected. That is different from a planned feature such as the current Search Activity item.
-
-### Target model
-
-Introduce explicit feature readiness and runtime availability.
-
-Suggested shape:
+SSHDeck now separates these concepts:
 
 ```ts
 type FeatureReadiness = "ready" | "experimental" | "planned";
-
-type CommandAvailability = {
-  enabled: boolean;
-  reason?: string;
-};
 
 type CommandDefinition = {
   id: CommandId;
   title: string;
   description: string;
   category: CommandCategory;
-  shortcut?: string;
   readiness: FeatureReadiness;
-  availability: CommandAvailability;
+  enabled: boolean;
+  availabilityReason?: string;
   run: () => void | Promise<void>;
 };
 ```
 
-Do not use `enabled: true` for placeholder navigation.
+A command such as `server.connect` can be `ready` but unavailable because no server is selected. A planned feature is not exposed in production UI until its complete flow exists.
 
-### View registry
+### Shared Workbench feature registry
 
-The Activity Bar should not maintain its own hard-coded `enabled` flags independently from the command system.
+Activity Bar and Bottom Panel visibility is derived from `workbenchFeatures.ts`.
 
-Introduce a small Workbench view registry:
+Rules:
 
-```ts
-type WorkbenchViewDefinition = {
-  id: WorkbenchViewId;
-  label: string;
-  command: CommandId;
-  readiness: FeatureReadiness;
-  location: "activity" | "panel" | "secondary";
-};
+- `ready` and approved `experimental` features may appear in production UI;
+- `planned` features remain hidden;
+- `CommandService.execute` refuses planned commands;
+- Command Palette, Workbench menu, native menu, context menus, shortcut reference, and keybindings respect readiness/availability;
+- new product surfaces must move to `ready` only after end-to-end behavior exists.
+
+### Shared lifecycle ownership
+
+Subsystems with background state must have one owner. Phase 1 applies this to SSH tunnels:
+
+```text
+TunnelProvider
+├── saved tunnel definitions
+├── process status polling
+├── start / stop
+├── save / delete
+├── auto-restart
+└── selected tunnel integration
+
+Consumers
+├── Ports Activity workspace
+├── Bottom Panel Ports
+├── Inspector summary
+└── CommandService
 ```
 
-The Activity Bar, menu, Command Palette and shortcuts should resolve availability from shared definitions.
-
-This prevents four different UI surfaces from disagreeing about whether a feature exists.
+No consumer may create an independent tunnel polling/restart loop.
 
 ---
 
-# Implementation phases
+## Implementation phases
 
-## Phase 0 — Interaction truthfulness and registry
+### Phase 0 — Interaction truthfulness + feature/view registry ✅
 
-### Scope
+Completed in PR #9.
 
-- separate feature readiness from runtime availability;
-- introduce shared Workbench view definitions;
-- remove enabled placeholder commands;
-- remove or hide placeholder-only panel tabs until their real implementation lands;
-- add disabled reasons/tooltips for commands that are implemented but unavailable because of state;
-- add a development assertion/test that no `ready` navigation command resolves to a placeholder component.
+- introduced explicit `ready / experimental / planned` readiness;
+- hid planned Activity Bar items;
+- removed placeholder Terminal / Ports / Logs panel surfaces;
+- migrated legacy panel state safely;
+- separated command readiness from runtime availability.
 
-### Important decision: remove Bottom Panel `Terminal`
+### Phase 1 — Real Ports workspace ✅
 
-Do **not** build a second terminal just to make the button work.
+Completed in PR #10.
 
-The central workspace already owns the real PTY terminal. A second bottom-panel Terminal would duplicate session ownership, focus handling, resizing and lifecycle semantics.
+Acceptance delivered:
 
-For now:
+- dedicated Activity Bar Port Forwarding workspace;
+- local `-L`, remote `-R`, and SOCKS `-D` tunnel creation/editing;
+- delete with stop-first behavior for running tunnels;
+- start/stop controls;
+- status, duration, exit reason/code, and server filtering;
+- auto-restart with bounded 1s/2s/4s backoff;
+- real Bottom Panel Ports view;
+- Inspector consumes shared tunnel state instead of owning lifecycle;
+- Ports command exposed through CommandService / View menu / Command Palette;
+- one `TunnelProvider` owns process polling and restart state.
 
-- remove the Bottom Panel `Terminal` tab and command;
-- keep the central PTY as the single interactive terminal surface;
-- if a future local shell/console is needed, introduce it as a different product concept with a separate specification.
+### Phase 2 — Sessions workspace
 
-### Acceptance criteria
+Build a dedicated Sessions workspace around the existing PTY/session lifecycle.
 
-- no enabled UI action opens placeholder text;
-- every disabled action explains why it is disabled or is hidden when purely planned;
-- Activity Bar and Command Palette use the same readiness source;
-- central terminal remains the only PTY interaction surface.
+Required behavior:
 
----
-
-## Phase 1 — Real Ports workspace
-
-Port forwarding already exists in `ToolsPanel`; the implementation should be extracted rather than rewritten.
-
-### Scope
-
-Create reusable tunnel state/hooks/components and use them in both Inspector and dedicated Ports surfaces.
-
-Dedicated Ports view/panel must support:
-
-- list tunnels;
-- create local (`-L`), remote (`-R`) and dynamic (`-D`) tunnels;
-- start/stop;
-- edit/delete when stopped;
-- current process state;
-- duration;
-- exit code/error;
-- health diagnostics;
-- auto-restart toggle and retry state;
-- filtering by selected server;
-- explicit empty/error/loading states.
-
-Wire:
-
-- Activity Bar `Port Forwarding`;
-- Bottom Panel `Ports`;
-- top menu / Command Palette commands;
-- existing Inspector tunnel controls.
-
-All entry points must operate on one tunnel store, not independent local copies.
-
-### Acceptance criteria
-
-- Activity Bar Ports opens a real workspace;
-- Bottom Panel Ports renders real tunnel state;
-- state changes are immediately reflected in Inspector and panel;
-- no duplicate tunnel process polling loops are introduced.
-
----
-
-## Phase 2 — Sessions workspace
-
-The current tab strip is good for switching between a few active sessions, but it is not a session-management view.
-
-### Scope
-
-Create a Sessions workspace that shows all current session records with:
-
-- active/reconnecting/disconnected/failed state;
-- server name and target;
-- start time and duration;
-- auto-reconnect state;
-- reconnect attempts;
-- exit code/signal when ended;
-- select/focus session;
+- list all open sessions;
+- active / reconnecting / disconnected / failed state;
+- server identity and session duration;
+- activate/focus a session;
 - reconnect;
 - close;
-- close all disconnected sessions;
-- optional filter by state/server.
+- reconnect-attempt state;
+- empty/loading/error states;
+- Activity Bar item becomes `ready` only when complete.
 
-Wire Activity Bar `Sessions` to this view.
+### Phase 3 — Full History workspace
 
-The existing central SessionTabs remain the fast switcher; the Sessions workspace becomes the management surface.
+Expand the existing recent Inspector history into a dedicated view.
 
-### Acceptance criteria
-
-- Activity Bar Sessions is enabled;
-- actions update the central terminal/tab state immediately;
-- commands and shortcuts still use the same lifecycle methods;
-- empty state is meaningful when there are no sessions.
-
----
-
-## Phase 3 — Full History workspace
-
-The Inspector currently shows only a small recent subset. Keep that compact summary, but add a dedicated History view.
-
-### Scope
+Required behavior:
 
 - full persisted session history;
-- filter by server, state and date/time;
-- reconnect/open server from a history row;
-- duration, exit code, signal and reconnect outcome;
-- clear history with confirmation;
-- export history to JSON/CSV only after the persisted model is stable.
+- server/state filtering;
+- exit code/signal/duration timestamps;
+- reconnect from a historical server entry when available;
+- bounded retention or explicit clearing policy;
+- export may be added as JSON/CSV after the core flow.
 
-Wire Activity Bar `History` to this view.
+### Phase 4 — Structured Logs / Diagnostics panel
 
-### Acceptance criteria
+Create a real Bottom Panel Logs surface.
 
-- Activity Bar History is enabled;
-- Inspector remains a compact five-item summary;
-- both surfaces read the same history store;
-- clear/export actions cannot silently lose data.
+Required behavior:
 
----
-
-## Phase 4 — Logs and Diagnostics panel
-
-The current Bottom Panel `Logs` is placeholder copy. Replace it with a structured local event stream.
-
-### Event classes
-
-At minimum:
-
-- session start/connected/disconnected/reconnect/close;
-- SSH status probes;
+- SSH lifecycle events;
+- reconnect events;
+- tunnel failures/restarts;
 - SFTP diagnostics;
-- tunnel start/stop/failure/auto-restart;
-- transfer start/done/failure/cancel;
-- command-safety confirmation/rejection events without logging secrets.
+- transfer errors;
+- filtering by subsystem/severity;
+- bounded in-memory retention;
+- secrets/passwords/key material must never appear in logs.
 
-### Log model
+### Phase 5 — Workbench Search
 
-```ts
-type WorkbenchLogEntry = {
-  id: string;
-  atMs: number;
-  level: "info" | "warning" | "error";
-  source: "session" | "ssh" | "sftp" | "tunnel" | "transfer" | "command";
-  serverId?: string;
-  sessionId?: string;
-  message: string;
-  detail?: string;
-};
-```
+Search across existing SSHDeck entities, not recursively through remote files.
 
-### UI
-
-- filter by level/source/server/session;
-- copy one entry;
-- copy visible entries;
-- clear local view;
-- bounded retention to avoid unbounded memory growth;
-- never record passwords/private keys/raw secret values.
-
-### Acceptance criteria
-
-- Bottom Panel Logs contains real events;
-- SFTP diagnostics and tunnel failures appear there;
-- logs do not expose credentials;
-- retention is bounded and tested.
-
----
-
-## Phase 5 — Workbench Search
-
-Do not implement remote-file content search as part of this phase. That is a separate SFTP feature with very different cost and permissions.
-
-### Scope
-
-Global local entity search across:
+Initial targets:
 
 - servers;
-- active/recent sessions;
+- sessions;
 - tunnels;
 - Quick Commands;
 - transfers;
-- commands/actions.
+- commands.
 
-Results are grouped by entity type and execute the canonical command/action when selected.
+Remote recursive SFTP search is intentionally separate because of latency, permissions, traversal cost, and cancellation requirements.
 
-The existing server filter remains a lightweight filter inside the Servers view.
+### Phase 6 — Versioned Settings
 
-### Acceptance criteria
+Create a real Settings workspace with a versioned persisted schema.
 
-- Activity Bar Search opens a dedicated search surface;
-- results update while typing;
-- selecting a result navigates to/focuses the correct entity;
-- no remote recursive filesystem scan is triggered.
+Candidate settings:
 
----
+- auto-reconnect defaults;
+- diagnostic timeout;
+- transfer concurrency;
+- destructive-command policy;
+- workspace restore behavior;
+- optional OpenSSH binary override.
 
-## Phase 6 — Settings
+Settings migration must be explicit when schema versions change.
 
-Create a versioned local application settings model rather than scattering `localStorage` flags through components.
+### Phase 7 — Navigation / UX consistency
 
-### Initial settings
+Audit every visible interactive control after all feature views exist.
 
-Only include settings with real product behavior:
+Required checks:
 
-- default auto-reconnect;
-- SSH/SFTP diagnostic timeout;
-- transfer concurrency limit;
-- destructive-command confirmation policy;
-- default behavior after starting a transfer (open panel or stay in browser);
-- preferred initial Workbench view;
-- restore previous workspace layout/session tabs where safe;
-- OpenSSH binary override only if automatic discovery fails.
+- loading, empty, failure and disabled states;
+- keyboard focus/navigation;
+- no duplicate command implementations;
+- no no-op controls;
+- responsive behavior;
+- consistent destructive-action confirmation;
+- menu, shortcuts, Activity Bar and Command Palette use the same command routes.
 
-Do not add cosmetic settings merely to fill the page.
+### Phase 8 — Automated + Windows runtime release gate
 
-### Persistence
+Automated CI remains required:
 
-Use a schema-versioned local settings object with migration support.
+- Rust format;
+- Clippy;
+- Rust tests;
+- frontend TypeScript/Vite build;
+- Tauri backend check.
 
-### Acceptance criteria
-
-- Settings Activity item is enabled;
-- changing a setting changes real behavior immediately or after an explicitly documented restart;
-- invalid persisted values fall back safely;
-- migrations are tested.
-
----
-
-## Phase 7 — Navigation and UX consistency
-
-Once all primary surfaces are real, normalize behavior.
-
-### Scope
-
-- consistent empty/loading/error states;
-- consistent toolbar placement;
-- consistent destructive confirmations;
-- consistent selected-server/session propagation;
-- badges/counts for Sessions, Transfers and failing tunnels where useful;
-- focus restoration after dialogs/dropdowns;
-- keyboard navigation for Activity Bar and panel tabs;
-- no duplicate actions with different semantics;
-- remove stale explanatory/placeholder copy.
+Before completing the milestone, run a Windows runtime smoke test covering all ready product surfaces.
 
 ---
 
-## Phase 8 — Test and release gate
+## Proposed PR sequence
 
-### Automated
+Completed:
 
-Add or extend tests for:
+1. `refactor/workbench-feature-registry` — PR #9 ✅
+2. `feat/ports-workspace` — PR #10 ✅
 
-- command readiness vs runtime availability;
-- view registry consistency;
-- session view actions;
-- tunnel store synchronization;
-- history filtering/persistence;
-- log redaction/retention;
-- settings migration;
-- frontend build and Tauri check.
-
-### Runtime smoke matrix
-
-At minimum on Windows before promotion to `main`:
-
-1. every Activity Bar item opens a real destination;
-2. every top-menu command either runs or is correctly disabled;
-3. every Bottom Panel tab contains real data/behavior;
-4. no clickable control is a no-op;
-5. SFTP errors still produce diagnostics;
-6. transfers still cancel/retry;
-7. tunnels start/stop and stay synchronized across surfaces;
-8. session tabs and Sessions workspace stay synchronized;
-9. layout resize/collapse state survives expected restarts;
-10. no secrets appear in logs/errors.
-
-Linux/macOS packaging smoke tests follow once platform packaging is part of the release gate.
-
----
-
-# Proposed PR sequence
-
-Keep each change independently reviewable and merge into `dev/master` only after CI is green.
-
-1. `refactor/workbench-feature-registry`
-   - readiness/availability split;
-   - shared view registry;
-   - remove Bottom Terminal placeholder;
-   - remove enabled placeholder panel behavior.
-
-2. `feat/ports-workspace`
-   - extract shared tunnel store;
-   - real Ports Activity/Panel view.
+Next:
 
 3. `feat/sessions-workspace`
-   - full session management view.
-
 4. `feat/history-workspace`
-   - full history view and persisted operations.
-
 5. `feat/workbench-logs`
-   - structured logs/diagnostics panel.
-
 6. `feat/workbench-search`
-   - local entity search.
-
 7. `feat/settings-workspace`
-   - versioned behavior settings.
-
 8. `fix/ui-interaction-consistency`
-   - final interaction audit, accessibility, empty/loading/error consistency and Windows runtime smoke fixes.
 
-Do not combine these into one large PR.
+Each feature PR must target `dev/master`, pass CI, and avoid introducing visible controls whose complete flow is not yet implemented.
 
 ---
 
-# Definition of Done for this milestone
+## Definition of Done
 
-The milestone is complete when:
+This milestone is complete only when:
 
-- every Activity Bar item is either implemented or intentionally absent from the production UI;
-- every Bottom Panel tab is functional;
-- every visible button performs a real action or has a clear disabled reason;
-- Command Palette, menu, shortcuts and visible buttons resolve through the same command/action paths;
-- no production component contains placeholder-only content behind a ready command;
-- existing SSH, SFTP, transfers, diagnostics, Quick Commands and tunnels regressions remain green;
+- every Activity Bar item is implemented or intentionally absent from production UI;
+- every Bottom Panel tab contains real behavior/data;
+- no clickable control is a no-op;
+- no `ready` command opens placeholder-only content;
+- menu/Command Palette/shortcuts/buttons resolve through shared command paths;
+- existing SSH/SFTP/transfers/diagnostics/tunnel flows remain green;
 - Windows runtime smoke test passes;
-- README reflects only functionality that actually ships.
+- README describes only shipped behavior.
