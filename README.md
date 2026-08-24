@@ -24,7 +24,13 @@ Existing `~/.ssh/config`, `ssh-agent`, `known_hosts`, `ProxyJump`, `IdentityFile
 - Quick Commands scoped globally or to a server;
 - local (`-L`), remote (`-R`), and dynamic SOCKS (`-D`) forwarding;
 - tunnel runtime health, stderr diagnostics, keepalives, and bounded auto-restart;
-- Dangerous Command Protection for Quick Commands with risk classification and explicit confirmation.
+- Dangerous Command Protection for Quick Commands with risk classification and explicit confirmation;
+- Activity Bar and contextual server sidebar;
+- resizable/collapsible primary and secondary panes;
+- central terminal workspace with session tabs;
+- bottom panel and status bar;
+- command palette, application commands, keyboard shortcuts, and native desktop menu integration;
+- responsive workbench layout built with Tailwind CSS v4, HeroUI 3, and Motion.
 
 The terminal path is intentionally:
 
@@ -68,7 +74,7 @@ Then:
 ```powershell
 git clone https://github.com/GendByteMaster/SSHDeck.git
 cd SSHDeck
-git checkout dev/master
+git switch main
 cd desktop
 npm install
 npm run tauri dev
@@ -78,7 +84,7 @@ For an existing clone:
 
 ```powershell
 cd SSHDeck
-git switch dev/master
+git switch main
 git pull
 cd desktop
 npm install
@@ -94,7 +100,7 @@ After installing the normal Tauri 2 system dependencies for the OS:
 ```bash
 git clone https://github.com/GendByteMaster/SSHDeck.git
 cd SSHDeck
-git checkout dev/master
+git switch main
 cd desktop
 npm install
 npm run tauri dev
@@ -123,6 +129,8 @@ npm run build
 cd src-tauri
 cargo check
 ```
+
+The same Rust and desktop checks run in GitHub Actions.
 
 ## CLI
 
@@ -186,7 +194,7 @@ This protection applies to saved Quick Commands. SSHDeck intentionally does not 
 SSHDeck/
 ├── src/                     # reusable Rust SSHDeck core + CLI
 ├── desktop/
-│   ├── src/                 # React/xterm.js UI
+│   ├── src/                 # React/xterm.js workbench UI
 │   └── src-tauri/           # Tauri + portable-pty/OpenSSH bridge
 └── .github/workflows/ci.yml
 ```
@@ -199,18 +207,21 @@ SSHDeck/
 - **Fast path** — connecting to a known server should take one UI action.
 - **Developer-focused** — terminals, Quick Commands, tunnels, connection health, and project grouping are first-class features.
 - **Secure by default** — SSHDeck does not copy private-key material into its own storage and does not bypass `known_hosts` verification.
+- **Workbench-first UI** — navigation and auxiliary tooling stay around a central terminal workspace rather than competing with it.
 
 ## Next milestones
 
 1. Richer command safety policies and audit history.
 2. Tunnel/session history export and diagnostics.
-3. Keyboard shortcuts and command palette.
-4. SFTP/file browser as an optional workspace panel.
+3. SFTP/file browser as an optional workspace panel.
+4. Workspace persistence and recovery improvements.
 5. Cross-platform desktop packaging and signed releases.
 
 ## Security
 
 SSHDeck delegates authentication and host verification to OpenSSH. Private keys should remain managed by OpenSSH, the operating system, `ssh-agent`, or compatible hardware-backed agents.
+
+Passwords used for password-authenticated sessions are kept only in application memory for the running process and are not written into the SSHDeck registry.
 
 ## License
 
