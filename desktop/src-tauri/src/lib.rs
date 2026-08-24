@@ -452,6 +452,16 @@ fn write_clipboard_process(program: &str, args: &[&str], text: &str) -> Result<(
 }
 
 #[tauri::command]
+fn sftp_diagnose(
+    server_id: String,
+    app: AppHandle,
+) -> Result<sftp_diagnostics::SftpDiagnosticResult, String> {
+    let result = sftp_diagnostics::sftp_diagnose(server_id)?;
+    let _ = app.emit("sshdeck://sftp-diagnostic", result.clone());
+    Ok(result)
+}
+
+#[tauri::command]
 fn copy_text(text: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -790,7 +800,7 @@ pub fn run() {
             sftp::sftp_remove,
             sftp::sftp_upload,
             sftp::sftp_download,
-            sftp_diagnostics::sftp_diagnose,
+            sftp_diagnose,
             transfers::sftp_start_upload,
             transfers::sftp_start_download,
             transfers::sftp_transfer_list,
