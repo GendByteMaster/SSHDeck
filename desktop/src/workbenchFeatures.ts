@@ -44,7 +44,7 @@ export const activityFeatures: WorkbenchFeature<ActivityFeatureId>[] = [
     id: "ports",
     label: "Port forwarding",
     description: "Manage local, remote, and SOCKS tunnels as a dedicated workspace.",
-    readiness: "planned",
+    readiness: "ready",
   },
   {
     id: "sessions",
@@ -77,7 +77,7 @@ export const panelFeatures: WorkbenchFeature<PanelFeatureId>[] = [
     id: "ports",
     label: "Ports",
     description: "Managed SSH port forwarding state.",
-    readiness: "planned",
+    readiness: "ready",
   },
   {
     id: "logs",
