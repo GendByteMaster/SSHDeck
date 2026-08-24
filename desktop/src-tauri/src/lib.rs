@@ -10,7 +10,10 @@ use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system}
 use serde::Serialize;
 use sshdeck::config::SshConfig;
 use sshdeck::registry::{ServerRecord, ServerRegistry};
-use sshdeck::workspace::{QuickCommand, TunnelKind, TunnelRecord, WorkspaceData, WorkspaceStore};
+use sshdeck::workspace::{
+    QuickCommand, SessionHistoryRecord, TunnelKind, TunnelRecord, WorkbenchLayout, WorkspaceData,
+    WorkspaceStore,
+};
 use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
@@ -403,6 +406,74 @@ fn workspace_load() -> Result<WorkspaceData, String> {
 }
 
 #[tauri::command]
+fn workspace_save_layout(layout: WorkbenchLayout) -> Result<WorkspaceData, String> {
+    let store = WorkspaceStore::load_default().map_err(|error| error.to_string())?;
+    let mut data = store.load().map_err(|error| error.to_string())?;
+    data.layout = layout;
+    store.save(&data).map_err(|error| error.to_string())?;
+    Ok(data)
+}
+
+#[tauri::command]
+fn workspace_save_session_history(
+    mut items: Vec<SessionHistoryRecord>,
+) -> Result<WorkspaceData, String> {
+    items.truncate(30);
+    let store = WorkspaceStore::load_default().map_err(|error| error.to_string())?;
+    let mut data = store.load().map_err(|error| error.to_string())?;
+    data.session_history = items;
+    store.save(&data).map_err(|error| error.to_string())?;
+    Ok(data)
+}
+
+fn write_clipboard_process(program: &str, args: &[&str], text: &str) -> Result<(), String> {
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("failed to start clipboard helper {program}: {error}"))?;
+    child
+        .stdin
+        .as_mut()
+        .ok_or_else(|| format!("clipboard helper {program} has no stdin"))?
+        .write_all(text.as_bytes())
+        .map_err(|error| error.to_string())?;
+    let output = child.wait_with_output().map_err(|error| error.to_string())?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
+    }
+}
+
+#[tauri::command]
+fn copy_text(text: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        return write_clipboard_process(
+            "powershell",
+            &["-NoProfile", "-NonInteractive", "-Command", "Set-Clipboard -Value ([Console]::In.ReadToEnd())"],
+            &text,
+        );
+    }
+    #[cfg(target_os = "macos")]
+    {
+        return write_clipboard_process("pbcopy", &[], &text);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if write_clipboard_process("wl-copy", &[], &text).is_ok() {
+            return Ok(());
+        }
+        return write_clipboard_process("xclip", &["-selection", "clipboard"], &text);
+    }
+    #[allow(unreachable_code)]
+    Err("clipboard is not supported on this platform".to_owned())
+}
+
+#[tauri::command]
 fn save_quick_command(mut item: QuickCommand) -> Result<WorkspaceData, String> {
     if item.id.trim().is_empty() {
         item.id = Uuid::new_v4().to_string();
@@ -696,6 +767,9 @@ pub fn run() {
             terminal_resize,
             terminal_close,
             workspace_load,
+            workspace_save_layout,
+            workspace_save_session_history,
+            copy_text,
             save_quick_command,
             delete_quick_command,
             run_quick_command,
