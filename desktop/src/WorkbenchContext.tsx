@@ -29,7 +29,10 @@ type NativeLayout = {
   primaryWidth: number;
 };
 
-type NativeWorkspace = { layout?: NativeLayout };
+type NativeWorkspace = {
+  layout?: NativeLayout;
+  settings?: { restoreWorkspaceLayout?: boolean };
+};
 
 type WorkbenchState = {
   primaryVisible: boolean;
@@ -57,6 +60,7 @@ type WorkbenchActions = {
   requestShowSearchWorkspace: () => void;
   requestShowSessionsWorkspace: () => void;
   requestShowHistoryWorkspace: () => void;
+  requestShowSettingsWorkspace: () => void;
   requestSelectSession: (index: number) => void;
   requestNextSession: () => void;
   requestPreviousSession: () => void;
@@ -78,6 +82,7 @@ export type AppActions = {
   showSearchWorkspace?: () => void;
   showSessionsWorkspace?: () => void;
   showHistoryWorkspace?: () => void;
+  showSettingsWorkspace?: () => void;
   selectSession?: (index: number) => void;
   nextSession?: () => void;
   previousSession?: () => void;
@@ -124,13 +129,14 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [selectedServer, setSelectedServer] = useState<ServerSelection>(defaults.selectedServer);
   const [selectedTunnel, setSelectedTunnel] = useState<TunnelSelection>(defaults.selectedTunnel);
   const appActions = useRef<AppActions>({});
+  const skipInitialLayoutSave = useRef(true);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     void invoke<NativeWorkspace>("workspace_load")
       .then((workspace) => {
-        if (cancelled || !workspace.layout) return;
+        if (cancelled || !workspace.layout || workspace.settings?.restoreWorkspaceLayout === false) return;
         const layout = workspace.layout;
         setPrimaryVisible(layout.primaryVisible);
         setSecondaryVisible(layout.secondaryVisible);
@@ -144,6 +150,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!hydrated) return;
+    if (skipInitialLayoutSave.current) {
+      skipInitialLayoutSave.current = false;
+      return;
+    }
     const layout: NativeLayout = {
       primaryVisible,
       secondaryVisible,
@@ -179,6 +189,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const requestShowHistoryWorkspace = useCallback(() => {
     setPrimaryVisible(true);
     appActions.current.showHistoryWorkspace?.();
+  }, []);
+  const requestShowSettingsWorkspace = useCallback(() => {
+    setPrimaryVisible(true);
+    appActions.current.showSettingsWorkspace?.();
   }, []);
   const requestSelectSession = useCallback((index: number) => appActions.current.selectSession?.(index), []);
   const requestNextSession = useCallback(() => appActions.current.nextSession?.(), []);
@@ -228,6 +242,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     requestShowSearchWorkspace,
     requestShowSessionsWorkspace,
     requestShowHistoryWorkspace,
+    requestShowSettingsWorkspace,
     requestSelectSession,
     requestNextSession,
     requestPreviousSession,
@@ -261,6 +276,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     requestShowHistoryWorkspace,
     requestShowSearchWorkspace,
     requestShowSessionsWorkspace,
+    requestShowSettingsWorkspace,
     requestStartSelectedTunnel,
     requestStopSelectedTunnel,
     secondaryVisible,
