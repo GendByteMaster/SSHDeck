@@ -79,6 +79,7 @@ export function App() {
   const terminalHost = useRef<HTMLDivElement | null>(null);
   const tabsRef = useRef<SessionView[]>([]);
   const serversRef = useRef<ServerRecord[]>([]);
+  const activeIdRef = useRef<string | null>(null);
   const reconnecting = useRef(new Set<string>());
   const pendingOutput = useRef(new Map<string, Uint8Array[]>());
   const recentOutputText = useRef(new Map<string, string>());
@@ -90,6 +91,7 @@ export function App() {
 
   useEffect(() => { tabsRef.current = tabs; }, [tabs]);
   useEffect(() => { serversRef.current = servers; }, [servers]);
+  useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
 
   function appendHistory(item: Omit<SessionHistoryItem, "id">) {
     setHistory((current) => {
@@ -100,7 +102,9 @@ export function App() {
   }
 
   async function refreshServers() {
-    setServers(await invoke<ServerRecord[]>("list_servers"));
+    const next = await invoke<ServerRecord[]>("list_servers");
+    serversRef.current = next;
+    setServers(next);
   }
 
   useEffect(() => {
@@ -110,15 +114,6 @@ export function App() {
       hydrateSessionHistory().then(setHistory),
     ]).catch((value) => setError(String(value)));
   }, []);
-
-  useEffect(() => {
-    registerAppActions({
-      selectSession: (index) => {
-        const tab = tabsRef.current[index];
-        if (tab) setActiveId(tab.id);
-      },
-    });
-  }, [registerAppActions]);
 
   function maybeSendPassword(sessionId: string) {
     if (passwordSent.current.has(sessionId)) return;
@@ -240,7 +235,10 @@ export function App() {
         try {
           const replacement = await startSession(server, tab.autoReconnect, attempt);
           setTabs((current) => current.map((item) => item.id === tab.id ? replacement : item));
-          setActiveId((current) => current === tab.id ? replacement.id : current);
+          if (activeIdRef.current === tab.id) {
+            activeIdRef.current = replacement.id;
+            setActiveId(replacement.id);
+          }
           appendHistory({ serverId: server.id, serverName: server.name, state: "reconnected", atMs: Date.now(), durationMs: 0, exitCode: null });
           void refreshServer(server.id).catch(() => undefined);
           return;
@@ -306,11 +304,20 @@ export function App() {
   }, [activeStatus?.latencyMs, activeTab?.id, activeTab?.name, activeTab?.state, setSessionSnapshot]);
 
   async function connect(server: ServerRecord) {
-    const existing = tabs.find((tab) => tab.serverId === server.id);
-    if (existing) { setActiveId(existing.id); return; }
+    const existing = tabsRef.current.find((tab) => tab.serverId === server.id);
+    if (existing) {
+      activeIdRef.current = existing.id;
+      setActiveId(existing.id);
+      return;
+    }
     try {
       const tab = await startSession(server);
-      setTabs((value) => [...value, tab]);
+      setTabs((value) => {
+        const next = [...value, tab];
+        tabsRef.current = next;
+        return next;
+      });
+      activeIdRef.current = tab.id;
       setActiveId(tab.id);
       void refreshServers();
       void refreshServer(server.id).catch(() => undefined);
@@ -318,7 +325,7 @@ export function App() {
   }
 
   async function reconnect(tab: SessionView) {
-    const server = servers.find((item) => item.id === tab.serverId);
+    const server = serversRef.current.find((item) => item.id === tab.serverId);
     if (!server) return;
     try {
       await invoke("terminal_close", { sessionId: tab.id });
@@ -327,7 +334,12 @@ export function App() {
       sessionServer.current.delete(tab.id);
       passwordSent.current.delete(tab.id);
       const replacement = await startSession(server, tab.autoReconnect, 0);
-      setTabs((value) => value.map((item) => item.id === tab.id ? replacement : item));
+      setTabs((value) => {
+        const next = value.map((item) => item.id === tab.id ? replacement : item);
+        tabsRef.current = next;
+        return next;
+      });
+      activeIdRef.current = replacement.id;
       setActiveId(replacement.id);
       void refreshServers();
       void refreshServer(server.id).catch(() => undefined);
@@ -335,7 +347,7 @@ export function App() {
   }
 
   async function closeTab(id: string) {
-    const tab = tabs.find((item) => item.id === id);
+    const tab = tabsRef.current.find((item) => item.id === id);
     await invoke("terminal_close", { sessionId: id });
     terminals.current.get(id)?.terminal.dispose();
     terminals.current.delete(id);
@@ -346,10 +358,67 @@ export function App() {
     if (tab) appendHistory({ serverId: tab.serverId, serverName: tab.name, state: "closed", atMs: Date.now(), durationMs: tab.durationMs, exitCode: tab.exitCode });
     setTabs((value) => {
       const next = value.filter((item) => item.id !== id);
-      if (activeId === id) setActiveId(next.at(-1)?.id ?? null);
+      tabsRef.current = next;
       return next;
     });
+    if (activeIdRef.current === id) {
+      const nextActive = tabsRef.current.at(-1)?.id ?? null;
+      activeIdRef.current = nextActive;
+      setActiveId(nextActive);
+    }
   }
+
+  useEffect(() => {
+    registerAppActions({
+      selectSession: (index) => {
+        const tab = tabsRef.current[index];
+        if (!tab) return;
+        activeIdRef.current = tab.id;
+        setActiveId(tab.id);
+      },
+      nextSession: () => {
+        const currentTabs = tabsRef.current;
+        if (currentTabs.length === 0) return;
+        const currentIndex = currentTabs.findIndex((tab) => tab.id === activeIdRef.current);
+        const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % currentTabs.length;
+        const next = currentTabs[nextIndex];
+        activeIdRef.current = next.id;
+        setActiveId(next.id);
+      },
+      previousSession: () => {
+        const currentTabs = tabsRef.current;
+        if (currentTabs.length === 0) return;
+        const currentIndex = currentTabs.findIndex((tab) => tab.id === activeIdRef.current);
+        const nextIndex = currentIndex < 0 ? 0 : (currentIndex - 1 + currentTabs.length) % currentTabs.length;
+        const next = currentTabs[nextIndex];
+        activeIdRef.current = next.id;
+        setActiveId(next.id);
+      },
+      closeSession: () => {
+        if (activeIdRef.current) void closeTab(activeIdRef.current);
+      },
+      reconnectSession: () => {
+        const tab = tabsRef.current.find((item) => item.id === activeIdRef.current);
+        if (tab) void reconnect(tab);
+      },
+      connectServer: (serverId) => {
+        const server = serversRef.current.find((item) => item.id === serverId);
+        if (server) void connect(server);
+      },
+      editServer: (serverId) => {
+        const server = serversRef.current.find((item) => item.id === serverId);
+        if (server) openEditServer(server);
+      },
+      exportServer: (serverId) => {
+        const server = serversRef.current.find((item) => item.id === serverId);
+        if (server) setExportServer(server);
+      },
+      deleteServer: (serverId) => {
+        const server = serversRef.current.find((item) => item.id === serverId);
+        if (server) setDeleteServer(server);
+      },
+    });
+  }, [registerAppActions]);
 
   function toggleAutoReconnect(id: string) {
     setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, autoReconnect: !tab.autoReconnect } : tab));
@@ -389,11 +458,12 @@ export function App() {
       const remainingTabs = tabsRef.current.filter((tab) => tab.serverId !== serverId);
       tabsRef.current = remainingTabs;
       setTabs(remainingTabs);
-      setActiveId((current) => {
-        if (!current || !doomedIds.has(current)) return current;
+      if (activeIdRef.current && doomedIds.has(activeIdRef.current)) {
         terminalHost.current?.replaceChildren();
-        return remainingTabs.at(-1)?.id ?? null;
-      });
+        const nextActive = remainingTabs.at(-1)?.id ?? null;
+        activeIdRef.current = nextActive;
+        setActiveId(nextActive);
+      }
       setHistory((current) => {
         const next = current.filter((item) => item.serverId !== serverId);
         saveSessionHistory(next);
@@ -453,7 +523,7 @@ export function App() {
     <SidebarV2 favorites={favorites} groups={groups} query={query} statuses={statuses} checking={checking} onQueryChange={setQuery} onAdd={openNewServer} onImport={() => setImportOpen(true)} onConnect={(server) => void connect(server)} onFavorite={(server) => void toggleFavorite(server)} onExport={(server) => setExportServer(server)} onEdit={openEditServer} onDelete={(server) => setDeleteServer(server)} />
 
     <section className="workspace">
-      <header className="topbar"><div className="tabs">{tabs.map((tab) => <button key={tab.id} className={`tab ${activeId === tab.id ? "active" : ""}`} onClick={() => setActiveId(tab.id)}><span className={`session-dot ${tab.state}`} /><span>{tab.name}</span><RefreshCw size={12} className={tab.state === "reconnecting" ? "spin" : ""} onClick={(event) => { event.stopPropagation(); void reconnect(tab); }} /><X size={13} onClick={(event) => { event.stopPropagation(); void closeTab(tab.id); }} /></button>)}</div></header>
+      <header className="topbar"><div className="tabs">{tabs.map((tab) => <button key={tab.id} className={`tab ${activeId === tab.id ? "active" : ""}`} onClick={() => { activeIdRef.current = tab.id; setActiveId(tab.id); }}><span className={`session-dot ${tab.state}`} /><span>{tab.name}</span><RefreshCw size={12} className={tab.state === "reconnecting" ? "spin" : ""} onClick={(event) => { event.stopPropagation(); void reconnect(tab); }} /><X size={13} onClick={(event) => { event.stopPropagation(); void closeTab(tab.id); }} /></button>)}</div></header>
       {activeId ? <div ref={terminalHost} className="terminal-host" /> : <EmptyWorkspaceV2 onAddServer={openNewServer} onImport={() => setImportOpen(true)} />}
     </section>
 
