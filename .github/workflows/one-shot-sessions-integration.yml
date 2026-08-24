@@ -1,0 +1,150 @@
+name: one-shot sessions workspace integration
+
+on:
+  push:
+    branches: [feat/sessions-workspace]
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/sessions-workspace
+
+      - name: Apply Sessions Workspace integration
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          def replace_once(path: str, old: str, new: str):
+              file = Path(path)
+              text = file.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected block not found in {path}: {old[:180]!r}")
+              file.write_text(text.replace(old, new, 1))
+
+          # App consumes shared logical session state; native PTY/xterm remains the runtime adapter.
+          path = "desktop/src/App.tsx"
+          replace_once(path, '''import {
+            hydrateSessionHistory,
+            saveSessionHistory,
+            SessionHistoryItem,
+            SessionProcessStatus,
+            SessionView,
+          } from "./sessionLifecycle";
+          ''', '''import { SessionProcessStatus, SessionView } from "./sessionLifecycle";
+          import { useSessions } from "./SessionContext";
+          ''')
+          replace_once(path, '''  const [tabs, setTabs] = useState<SessionView[]>([]);
+            const [history, setHistory] = useState<SessionHistoryItem[]>([]);
+            const [activeId, setActiveId] = useState<string | null>(null);
+          ''', '')
+          replace_once(path, '''  const { statuses, checking, refreshServer } = useServerStatus(servers);
+            const { registerAppActions, setSessionSnapshot } = useWorkbench();
+          ''', '''  const { statuses, checking, refreshServer } = useServerStatus(servers);
+            const {
+              sessions: tabs,
+              setSessions: setTabs,
+              activeId,
+              setActiveId,
+              history,
+              appendHistory,
+              updateHistory,
+              toggleAutoReconnect,
+              registerRuntimeActions,
+            } = useSessions();
+            const { registerAppActions, setSessionSnapshot } = useWorkbench();
+          ''')
+          text = Path(path).read_text()
+          text, count = re.subn(r'\n  function appendHistory\(item: Omit<SessionHistoryItem, "id">\) \{[\s\S]*?\n  \}\n\n  async function refreshServers', '\n\n  async function refreshServers', text, count=1)
+          if count != 1:
+              raise SystemExit("could not remove App-local appendHistory")
+          Path(path).write_text(text)
+          replace_once(path, '''    void Promise.all([
+                refreshServers(),
+                invoke<string[]>("list_hosts").then(setSshHosts),
+                hydrateSessionHistory().then(setHistory),
+              ]).catch((value) => setError(String(value)));
+          ''', '''    void Promise.all([
+                refreshServers(),
+                invoke<string[]>("list_hosts").then(setSshHosts),
+              ]).catch((value) => setError(String(value)));
+          ''')
+          text = Path(path).read_text()
+          text, count = re.subn(r'''\n      selectSession: \(index\) => \{[\s\S]*?\n      reconnectSession: \(\) => \{\n        const tab = tabsRef\.current\.find\(\(item\) => item\.id === activeIdRef\.current\);\n        if \(tab\) void reconnect\(tab\);\n      \},''', '', text, count=1)
+          if count != 1:
+              raise SystemExit("could not remove App-owned session command handlers")
+          Path(path).write_text(text)
+          replace_once(path, '''  function toggleAutoReconnect(id: string) {
+              setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, autoReconnect: !tab.autoReconnect } : tab));
+            }
+          ''', '''  useEffect(() => {
+              registerRuntimeActions({ reconnect: (tab) => reconnect(tab), close: (tab) => closeTab(tab.id) });
+            }, [registerRuntimeActions]);
+          ''')
+          replace_once(path, '''      setHistory((current) => {
+                const next = current.filter((item) => item.serverId !== serverId);
+                saveSessionHistory(next);
+                return next;
+              });
+          ''', '''      updateHistory((current) => current.filter((item) => item.serverId !== serverId));
+          ''')
+
+          # Activity Bar exposes Sessions as a real primary sidebar destination.
+          path = "desktop/src/SidebarV2.tsx"
+          replace_once(path, 'import { SftpBrowser } from "./SftpBrowser";\n', 'import { SftpBrowser } from "./SftpBrowser";\nimport { SessionsWorkspace } from "./SessionsWorkspace";\n')
+          replace_once(path, 'type SidebarView = "servers" | "sftp" | "ports";\n', 'type SidebarView = "servers" | "sftp" | "ports" | "sessions";\n')
+          replace_once(path, '''    registerAppActions({ addServer: onAdd, importOpenSsh: onImport, focusServerSearch: () => { setView("servers"); searchRef.current?.focus(); searchRef.current?.select(); } });
+          ''', '''    registerAppActions({
+              addServer: onAdd,
+              importOpenSsh: onImport,
+              focusServerSearch: () => { setView("servers"); searchRef.current?.focus(); searchRef.current?.select(); },
+              showSessionsWorkspace: () => setView("sessions"),
+            });
+          ''')
+          replace_once(path, '''    if (id === "servers" || id === "sftp" || id === "ports") { setView(id); return; }
+          ''', '''    if (id === "servers" || id === "sftp" || id === "ports" || id === "sessions") { setView(id); return; }
+          ''')
+          replace_once(path, '''          const active = id === "transfers" ? panelVisible && panelTab === "transfers" : (id === "servers" || id === "sftp" || id === "ports") && view === id;
+          ''', '''          const active = id === "transfers" ? panelVisible && panelTab === "transfers" : (id === "servers" || id === "sftp" || id === "ports" || id === "sessions") && view === id;
+          ''')
+          replace_once(path, '''    </div> : view === "sftp" ? <div className="flex min-h-0 min-w-0 flex-col bg-[#0d1015]/92"><SftpBrowser servers={allServers} selectedServerId={selectedServer.id} onSelectServer={selectSftpServer} /></div> : <PortsWorkspace servers={allServers} activeServerId={selectedServer.id} />}
+          ''', '''    </div> : view === "sftp" ? <div className="flex min-h-0 min-w-0 flex-col bg-[#0d1015]/92"><SftpBrowser servers={allServers} selectedServerId={selectedServer.id} onSelectServer={selectSftpServer} /></div> : view === "ports" ? <PortsWorkspace servers={allServers} activeServerId={selectedServer.id} /> : <SessionsWorkspace />}
+          ''')
+
+          # Menu / Command Palette can open the same Sessions workspace route.
+          path = "desktop/src/commands/CommandService.tsx"
+          replace_once(path, '  | "workbench.shortcuts.open"\n', '  | "workbench.shortcuts.open"\n  | "workbench.view.sessions"\n')
+          replace_once(path, '''      {
+                id: "server.add",
+          ''', '''      {
+                id: "workbench.view.sessions",
+                title: "Show Sessions Workspace",
+                description: "Inspect and control all current SSH sessions",
+                category: "Sessions",
+                enabled: true,
+                run: workbench.requestShowSessionsWorkspace,
+              },
+              {
+                id: "server.add",
+          ''')
+          replace_once(path, '''    workbench.requestSelectSession,
+              workbench.requestStartSelectedTunnel,
+          ''', '''    workbench.requestSelectSession,
+              workbench.requestShowSessionsWorkspace,
+              workbench.requestStartSelectedTunnel,
+          ''')
+
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/one-shot-sessions-integration.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add desktop/src .github/workflows/one-shot-sessions-integration.yml
+          git commit -m "feat(sessions): integrate shared sessions workspace"
+          git push origin HEAD:feat/sessions-workspace
