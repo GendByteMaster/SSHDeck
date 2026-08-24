@@ -6,7 +6,7 @@ import { useCommands } from "./commands/CommandService";
 export function DesktopShortcuts() {
   const { commands, shortcutsOpen, setShortcutsOpen } = useCommands();
   const shortcuts = useMemo(
-    () => commands.filter((command) => command.shortcut && command.id !== "workbench.shortcuts.open"),
+    () => commands.filter((command) => command.readiness !== "planned" && command.shortcut && command.id !== "workbench.shortcuts.open"),
     [commands],
   );
 
