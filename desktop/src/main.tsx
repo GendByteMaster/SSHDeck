@@ -6,6 +6,7 @@ import "./sessionLifecycle.css";
 import "./apple.css";
 import "./design-components.css";
 import "./ui-v2.css";
+import "./product-v2.css";
 import "./performance.css";
 import "./keyboard.css";
 import { App } from "./App";
