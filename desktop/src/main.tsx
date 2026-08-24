@@ -13,10 +13,12 @@ import "./workspace-v3.css";
 import "./performance.css";
 import "./keyboard.css";
 import "./workbench-v4.css";
+import "./workbench-chrome.css";
 import { App } from "./App";
+import { WorkbenchChrome } from "./WorkbenchChrome";
 import { installKeyboardNavigation } from "./keyboard";
 
-ReactDOM.createRoot(document.getElementById("root")!).render(<App />);
+ReactDOM.createRoot(document.getElementById("root")!).render(<><App /><WorkbenchChrome /></>);
 
 const uninstallKeyboardNavigation = installKeyboardNavigation();
 window.addEventListener("beforeunload", uninstallKeyboardNavigation, { once: true });
