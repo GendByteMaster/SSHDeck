@@ -140,7 +140,14 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     requestSelectSession: (index) => appActions.selectSession?.(index),
   }), [appActions, choosePanel, panelTab, panelVisible, primaryVisible, primaryWidth, registerAppActions, secondaryVisible, session, setPrimaryWidth]);
 
-  return <WorkbenchContext.Provider value={value}>{children}</WorkbenchContext.Provider>;
+  const rootClassName = [
+    "h-full w-full",
+    !primaryVisible ? "wb-primary-hidden" : "",
+    !secondaryVisible ? "wb-secondary-hidden" : "",
+    panelVisible ? "wb-panel-open" : "",
+  ].filter(Boolean).join(" ");
+
+  return <WorkbenchContext.Provider value={value}><div className={rootClassName}>{children}</div></WorkbenchContext.Provider>;
 }
 
 export function useWorkbench() {
