@@ -45,8 +45,12 @@ pub struct SessionHistoryRecord {
     pub server_name: String,
     pub state: String,
     pub at_ms: u64,
+    #[serde(default)]
+    pub started_at_ms: Option<u64>,
     pub duration_ms: u64,
     pub exit_code: Option<i32>,
+    #[serde(default)]
+    pub signal: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -121,5 +125,29 @@ impl WorkspaceStore {
         fs::rename(&tmp, &self.path)
             .with_context(|| format!("failed to replace {}", self.path.display()))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SessionHistoryRecord;
+
+    #[test]
+    fn legacy_history_record_keeps_loading_without_new_optional_fields() {
+        let record: SessionHistoryRecord = serde_json::from_str(
+            r#"{
+                "id":"legacy",
+                "serverId":"server-1",
+                "serverName":"Legacy",
+                "state":"closed",
+                "atMs":10,
+                "durationMs":5,
+                "exitCode":0
+            }"#,
+        )
+        .expect("legacy history should remain compatible");
+
+        assert_eq!(record.started_at_ms, None);
+        assert_eq!(record.signal, None);
     }
 }
