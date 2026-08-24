@@ -1,43 +1,18 @@
 import { Button } from "@heroui/react";
 import { AnimatePresence, motion } from "motion/react";
-import { Braces, Cable, ChevronDown, ChevronUp, PanelBottom, PanelLeftClose, PanelRightClose, TerminalSquare, UploadCloud } from "lucide-react";
-import { useEffect, useState } from "react";
-
-type PanelTab = "terminal" | "ports" | "logs" | "transfers";
-
-type LayoutState = {
-  primaryVisible: boolean;
-  secondaryVisible: boolean;
-  panelVisible: boolean;
-  panelTab: PanelTab;
-};
-
-const STORAGE_KEY = "sshdeck.workbench.layout.v4";
-
-const defaults: LayoutState = {
-  primaryVisible: true,
-  secondaryVisible: true,
-  panelVisible: false,
-  panelTab: "terminal",
-};
-
-function loadLayout(): LayoutState {
-  try {
-    return { ...defaults, ...JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}") };
-  } catch {
-    return defaults;
-  }
-}
-
-function activeSessionSnapshot() {
-  const tab = document.querySelector<HTMLElement>(".tab.active");
-  const name = tab?.querySelector<HTMLElement>("span:not(.session-dot)")?.textContent?.trim() || "No active session";
-  const dot = tab?.querySelector<HTMLElement>(".session-dot");
-  const state = dot ? [...dot.classList].find((item) => ["active", "reconnecting", "disconnected", "failed"].includes(item)) ?? "unknown" : "idle";
-  const probeText = document.querySelector<HTMLElement>(".status-grid")?.textContent ?? "";
-  const latency = probeText.match(/SSH probe\s*(\d+\s*ms)/i)?.[1] ?? null;
-  return { name, state, latency };
-}
+import {
+  Braces,
+  Cable,
+  ChevronDown,
+  ChevronUp,
+  PanelBottom,
+  PanelLeftClose,
+  PanelRightClose,
+  TerminalSquare,
+  UploadCloud,
+} from "lucide-react";
+import { useEffect } from "react";
+import { PanelTab, useWorkbench } from "./WorkbenchContext";
 
 const panelTabs: { id: PanelTab; label: string; icon: typeof TerminalSquare }[] = [
   { id: "terminal", label: "Terminal", icon: TerminalSquare },
@@ -48,22 +23,24 @@ const panelTabs: { id: PanelTab; label: string; icon: typeof TerminalSquare }[] 
 
 function PanelBody({ tab, name }: { tab: PanelTab; name: string }) {
   const copy = {
-    terminal: [name, "The interactive PTY remains in the session workspace. Auxiliary terminal and output views can live here."],
-    ports: ["Port forwarding", "Managed SSH tunnels will move into this panel as the next workbench migration step."],
-    logs: ["Session diagnostics", "Structured SSH lifecycle logs and connection diagnostics will live here without replacing the PTY stream."],
+    terminal: [name, "The interactive PTY remains in the session workspace. Auxiliary output can live here."],
+    ports: ["Port forwarding", "Managed SSH tunnels and forwarding state belong in this desktop panel."],
+    logs: ["Session diagnostics", "Structured SSH lifecycle logs and connection diagnostics live here."],
     transfers: ["Transfers", "SFTP transfer queue foundation. No transfer is currently active."],
   }[tab];
 
-  return <motion.div
-    key={tab}
-    initial={{ opacity: 0, y: 4 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.16, ease: "easeOut" }}
-    className="flex h-full flex-col items-start justify-center gap-1.5 px-6 py-4"
-  >
-    <strong className="text-[13px] font-semibold text-zinc-200">{copy[0]}</strong>
-    <span className="max-w-3xl text-[11px] leading-5 text-zinc-500">{copy[1]}</span>
-  </motion.div>;
+  return (
+    <motion.div
+      key={tab}
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.16, ease: "easeOut" }}
+      className="flex h-full flex-col items-start justify-center gap-1.5 px-6 py-4"
+    >
+      <strong className="text-[13px] font-semibold text-zinc-200">{copy[0]}</strong>
+      <span className="max-w-3xl text-[11px] leading-5 text-zinc-500">{copy[1]}</span>
+    </motion.div>
+  );
 }
 
 function stateDotClass(state: string) {
@@ -75,107 +52,106 @@ function stateDotClass(state: string) {
 }
 
 export function WorkbenchChrome() {
-  const [layout, setLayout] = useState<LayoutState>(loadLayout);
-  const [snapshot, setSnapshot] = useState(activeSessionSnapshot);
+  const {
+    primaryVisible,
+    secondaryVisible,
+    panelVisible,
+    panelTab,
+    session,
+    setPrimaryVisible,
+    setSecondaryVisible,
+    setPanelVisible,
+    choosePanel,
+    requestSelectSession,
+  } = useWorkbench();
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
-    document.documentElement.classList.toggle("wb-primary-hidden", !layout.primaryVisible);
-    document.documentElement.classList.toggle("wb-secondary-hidden", !layout.secondaryVisible);
-    document.documentElement.classList.toggle("wb-panel-open", layout.panelVisible);
-  }, [layout]);
-
-  useEffect(() => {
-    const refresh = () => setSnapshot(activeSessionSnapshot());
-    const observer = new MutationObserver(refresh);
-    observer.observe(document.getElementById("root")!, { subtree: true, childList: true, attributes: true, characterData: true });
-    const timer = window.setInterval(refresh, 1000);
-    return () => { observer.disconnect(); window.clearInterval(timer); };
-  }, []);
+    const root = document.documentElement;
+    root.classList.toggle("wb-primary-hidden", !primaryVisible);
+    root.classList.toggle("wb-secondary-hidden", !secondaryVisible);
+    root.classList.toggle("wb-panel-open", panelVisible);
+    return () => {
+      root.classList.remove("wb-primary-hidden", "wb-secondary-hidden", "wb-panel-open");
+    };
+  }, [panelVisible, primaryVisible, secondaryVisible]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey)) return;
-      if (event.key.toLowerCase() === "b" && event.altKey) {
+      const key = event.key.toLowerCase();
+      if (key === "b" && event.altKey) {
         event.preventDefault();
-        setLayout((value) => ({ ...value, secondaryVisible: !value.secondaryVisible }));
-        return;
-      }
-      if (event.key.toLowerCase() === "b") {
+        setSecondaryVisible(!secondaryVisible);
+      } else if (key === "b") {
         event.preventDefault();
-        setLayout((value) => ({ ...value, primaryVisible: !value.primaryVisible }));
-        return;
-      }
-      if (event.key.toLowerCase() === "j") {
+        setPrimaryVisible(!primaryVisible);
+      } else if (key === "j") {
         event.preventDefault();
-        setLayout((value) => ({ ...value, panelVisible: !value.panelVisible }));
-        return;
-      }
-      const index = Number(event.key);
-      if (!event.altKey && index >= 1 && index <= 9) {
-        const tabs = [...document.querySelectorAll<HTMLButtonElement>(".tab")];
-        if (tabs[index - 1]) {
+        setPanelVisible(!panelVisible);
+      } else if (!event.altKey) {
+        const index = Number(event.key);
+        if (index >= 1 && index <= 9) {
           event.preventDefault();
-          tabs[index - 1].click();
+          requestSelectSession(index - 1);
         }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-
-  function choosePanel(tab: PanelTab) {
-    setLayout((value) => ({ ...value, panelVisible: true, panelTab: tab }));
-  }
+  }, [panelVisible, primaryVisible, requestSelectSession, secondaryVisible, setPanelVisible, setPrimaryVisible, setSecondaryVisible]);
 
   return <>
     <AnimatePresence initial={false}>
-      {layout.panelVisible && <motion.section
-        key="bottom-panel"
-        initial={{ y: 18, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        exit={{ y: 16, opacity: 0 }}
-        transition={{ duration: 0.18, ease: "easeOut" }}
-        className="wb-bottom-panel fixed inset-x-0 z-20 grid border-t border-white/[0.07] bg-[#0c0f14]/98 shadow-[0_-16px_40px_rgba(0,0,0,.24)] backdrop-blur-xl"
-        style={{ bottom: "var(--wb-statusbar-height)", height: "var(--wb-panel-height)", gridTemplateRows: "42px minmax(0,1fr)" }}
-        aria-label="Workbench panel"
-      >
-        <header className="flex min-w-0 items-center gap-1 border-b border-white/[0.055] px-2">
-          {panelTabs.map(({ id, label, icon: Icon }) => <button
-            key={id}
-            type="button"
-            onClick={() => choosePanel(id)}
-            className={`relative flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-medium transition-colors ${layout.panelTab === id ? "bg-[#4f7cff]/12 text-zinc-100" : "text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300"}`}
-          >
-            <Icon size={14} /> {label}
-            {layout.panelTab === id && <motion.span layoutId="panel-tab-indicator" className="absolute inset-x-2 -bottom-[5px] h-px bg-[#6c8dff]" />}
-          </button>)}
-          <span className="flex-1" />
-          <Button
-            isIconOnly
-            aria-label="Hide panel"
-            onPress={() => setLayout((value) => ({ ...value, panelVisible: false }))}
-            className="size-8 min-w-8 rounded-lg bg-transparent text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200"
-          >
-            <ChevronDown size={15} />
-          </Button>
-        </header>
-        <PanelBody tab={layout.panelTab} name={snapshot.name} />
-      </motion.section>}
+      {panelVisible && (
+        <motion.section
+          key="bottom-panel"
+          initial={{ y: 18, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 16, opacity: 0 }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
+          className="wb-bottom-panel fixed inset-x-0 z-20 grid border-t border-white/[0.07] bg-[#0c0f14]/98 shadow-[0_-16px_40px_rgba(0,0,0,.24)] backdrop-blur-xl"
+          style={{ bottom: "var(--wb-statusbar-height)", height: "var(--wb-panel-height)", gridTemplateRows: "42px minmax(0,1fr)" }}
+          aria-label="Workbench panel"
+        >
+          <header className="flex min-w-0 items-center gap-1 border-b border-white/[0.055] px-2">
+            {panelTabs.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => choosePanel(id)}
+                className={`relative flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-medium transition-colors ${panelTab === id ? "bg-[#4f7cff]/12 text-zinc-100" : "text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300"}`}
+              >
+                <Icon size={14} /> {label}
+                {panelTab === id && <motion.span layoutId="panel-tab-indicator" className="absolute inset-x-2 -bottom-[5px] h-px bg-[#6c8dff]" />}
+              </button>
+            ))}
+            <span className="flex-1" />
+            <Button
+              isIconOnly
+              aria-label="Hide panel"
+              onPress={() => setPanelVisible(false)}
+              className="size-8 min-w-8 rounded-lg bg-transparent text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200"
+            >
+              <ChevronDown size={15} />
+            </Button>
+          </header>
+          <PanelBody tab={panelTab} name={session.name} />
+        </motion.section>
+      )}
     </AnimatePresence>
 
     <footer className="wb-statusbar fixed inset-x-0 bottom-0 z-30 flex h-7 select-none items-center gap-3 border-t border-white/[0.065] bg-[#0a0d12]/98 px-2.5 text-[10.5px] text-zinc-500 backdrop-blur-xl">
       <div className="flex items-center gap-1.5 capitalize">
-        <span className={`size-1.5 rounded-full ${stateDotClass(snapshot.state)}`} />
-        {snapshot.state === "idle" ? "No session" : snapshot.state}
+        <span className={`size-1.5 rounded-full ${stateDotClass(session.state)}`} />
+        {session.state === "idle" ? "No session" : session.state}
       </div>
-      <span className="max-w-64 truncate text-zinc-400">{snapshot.name}</span>
+      <span className="max-w-64 truncate text-zinc-400">{session.name}</span>
       <span className="hidden sm:inline">OpenSSH</span>
-      {snapshot.latency && <span className="hidden sm:inline">{snapshot.latency}</span>}
+      {session.latency && <span className="hidden sm:inline">{session.latency}</span>}
       <span className="flex-1" />
-      <button className="flex h-5 items-center gap-1 rounded-md px-1.5 text-zinc-500 transition-colors hover:bg-white/[0.05] hover:text-zinc-200" title="Toggle Servers (Ctrl+B)" onClick={() => setLayout((value) => ({ ...value, primaryVisible: !value.primaryVisible }))}><PanelLeftClose size={13} /><span className="hidden md:inline">Servers</span></button>
-      <button className="flex h-5 items-center gap-1 rounded-md px-1.5 text-zinc-500 transition-colors hover:bg-white/[0.05] hover:text-zinc-200" title="Toggle Inspector (Ctrl+Alt+B)" onClick={() => setLayout((value) => ({ ...value, secondaryVisible: !value.secondaryVisible }))}><PanelRightClose size={13} /><span className="hidden md:inline">Inspector</span></button>
-      <button className="flex h-5 items-center gap-1 rounded-md px-1.5 text-zinc-500 transition-colors hover:bg-white/[0.05] hover:text-zinc-200" title="Toggle Panel (Ctrl+J)" onClick={() => setLayout((value) => ({ ...value, panelVisible: !value.panelVisible }))}><PanelBottom size={13} />{layout.panelVisible ? <ChevronDown size={11} /> : <ChevronUp size={11} />}</button>
+      <button className="flex h-5 items-center gap-1 rounded-md px-1.5 text-zinc-500 transition-colors hover:bg-white/[0.05] hover:text-zinc-200" title="Toggle Servers (Ctrl+B)" onClick={() => setPrimaryVisible(!primaryVisible)}><PanelLeftClose size={13} /><span className="hidden md:inline">Servers</span></button>
+      <button className="flex h-5 items-center gap-1 rounded-md px-1.5 text-zinc-500 transition-colors hover:bg-white/[0.05] hover:text-zinc-200" title="Toggle Inspector (Ctrl+Alt+B)" onClick={() => setSecondaryVisible(!secondaryVisible)}><PanelRightClose size={13} /><span className="hidden md:inline">Inspector</span></button>
+      <button className="flex h-5 items-center gap-1 rounded-md px-1.5 text-zinc-500 transition-colors hover:bg-white/[0.05] hover:text-zinc-200" title="Toggle Panel (Ctrl+J)" onClick={() => setPanelVisible(!panelVisible)}><PanelBottom size={13} />{panelVisible ? <ChevronDown size={11} /> : <ChevronUp size={11} />}</button>
     </footer>
   </>;
 }
