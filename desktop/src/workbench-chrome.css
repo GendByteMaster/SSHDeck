@@ -1,0 +1,125 @@
+:root {
+  --wb-statusbar-height: 24px;
+  --wb-panel-height: 188px;
+}
+
+.app-shell {
+  height: calc(100vh - var(--wb-statusbar-height)) !important;
+}
+
+.wb-panel-open .app-shell {
+  height: calc(100vh - var(--wb-statusbar-height) - var(--wb-panel-height)) !important;
+}
+
+.wb-primary-hidden .workbench-primary {
+  width: 52px !important;
+  min-width: 52px !important;
+  max-width: 52px !important;
+  grid-template-columns: 52px !important;
+}
+.wb-primary-hidden .context-sidebar,
+.wb-primary-hidden .primary-resizer { display: none !important; }
+
+.wb-secondary-hidden .app-shell {
+  grid-template-columns: auto minmax(0, 1fr) !important;
+}
+.wb-secondary-hidden .tools-panel { display: none !important; }
+
+.wb-bottom-panel {
+  position: fixed;
+  z-index: 18;
+  left: 0;
+  right: 0;
+  bottom: var(--wb-statusbar-height);
+  height: var(--wb-panel-height);
+  display: grid;
+  grid-template-rows: 35px 1fr;
+  border-top: 1px solid rgba(255,255,255,.08);
+  background: rgba(12, 15, 20, .97);
+  box-shadow: 0 -14px 35px rgba(0,0,0,.22);
+  backdrop-filter: blur(20px) saturate(1.2);
+}
+
+.wb-panel-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, auto) 1fr 34px;
+  align-items: center;
+  padding: 0 7px;
+  border-bottom: 1px solid rgba(255,255,255,.055);
+}
+.wb-panel-tabs button {
+  height: 27px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  color: #788391;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.wb-panel-tabs button:hover { color: #dce2eb; background: rgba(255,255,255,.045); }
+.wb-panel-tabs button.active { color: #e9efff; background: rgba(77,111,255,.12); }
+.wb-panel-tabs .wb-panel-close { padding: 0; }
+
+.wb-panel-content {
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 6px;
+  color: #697482;
+}
+.wb-panel-content strong { color: #dfe4ec; font-size: 12px; }
+.wb-panel-content span { max-width: 680px; font-size: 10px; line-height: 1.6; }
+
+.wb-statusbar {
+  position: fixed;
+  z-index: 30;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--wb-statusbar-height);
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid rgba(255,255,255,.065);
+  color: #7e8998;
+  background: rgba(10, 13, 18, .98);
+  font-size: 9.5px;
+  user-select: none;
+}
+.wb-connection-state { display: inline-flex; align-items: center; gap: 6px; text-transform: capitalize; }
+.wb-status-dot { width: 6px; height: 6px; border-radius: 50%; background: #697381; }
+.state-active .wb-status-dot { background: #42c968; box-shadow: 0 0 8px rgba(66,201,104,.3); }
+.state-reconnecting .wb-status-dot { background: #6da7d9; }
+.state-failed .wb-status-dot { background: #d45b66; }
+.state-disconnected .wb-status-dot { background: #8a929d; }
+.wb-status-session { color: #aab3bf; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-status-spacer { flex: 1; }
+.wb-statusbar button {
+  height: 20px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 5px;
+  color: #77818e;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: 9px;
+}
+.wb-statusbar button:hover { color: #e5e9ef; background: rgba(255,255,255,.055); }
+
+@media (max-width: 760px) {
+  .wb-statusbar > span:not(.wb-status-spacer):not(.wb-status-session) { display: none; }
+  .wb-statusbar button { font-size: 0; }
+  .wb-statusbar button svg { width: 13px; }
+}
