@@ -55,15 +55,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
+    setLoading(true);
     try {
-      setLoading(true);
       const workspace = await invoke<WorkspaceSnapshot>("workspace_load");
       setSettings(normalizeSettings(workspace.settings));
       setError(null);
-    } catch (value) {
-      setError(`Could not load settings: ${String(value)}`);
-    } finally {
       setLoading(false);
+    } catch (value) {
+      // Stay in a not-ready state so consumers fail closed rather than silently
+      // falling back to a weaker/default policy when persisted settings are invalid.
+      setError(`Could not load settings: ${String(value)}`);
     }
   }, []);
 
