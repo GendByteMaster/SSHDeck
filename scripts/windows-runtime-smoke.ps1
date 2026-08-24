@@ -1,5 +1,6 @@
 param(
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$PreflightOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,7 +42,10 @@ function Confirm-SmokeCheck {
     }
 }
 
-if (-not $IsWindows) {
+# $IsWindows exists only in PowerShell Core. $env:OS works in both
+# Windows PowerShell 5.1 and PowerShell 7+ and is also set on GitHub runners.
+$isWindowsHost = $env:OS -eq "Windows_NT"
+if (-not $isWindowsHost) {
     throw "This runtime smoke gate must be run on Windows."
 }
 
@@ -51,6 +55,12 @@ foreach ($command in @("cargo", "node", "npm", "ssh", "sftp")) {
 
 Write-Host "SSHDeck Windows runtime release gate" -ForegroundColor Green
 Write-Host "Repository: $repoRoot"
+Write-Host "PowerShell: $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))"
+
+if ($PreflightOnly) {
+    Write-Host "Windows runtime smoke preflight PASSED." -ForegroundColor Green
+    exit 0
+}
 
 if (-not $SkipBuild) {
     Push-Location $repoRoot

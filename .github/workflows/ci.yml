@@ -92,6 +92,10 @@ jobs:
         with:
           node-version: 22
 
+      - name: Validate Windows PowerShell 5.1 smoke preflight
+        shell: powershell
+        run: .\scripts\windows-runtime-smoke.ps1 -PreflightOnly
+
       - name: Install frontend dependencies
         working-directory: desktop
         run: npm install
