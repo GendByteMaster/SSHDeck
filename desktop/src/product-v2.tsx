@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
-import { Command, Keyboard, Server, ShieldCheck, Zap } from "lucide-react";
-import { Button, StatusBadge } from "./ui";
+import { Keyboard, Plus, Server } from "lucide-react";
+import { Button } from "./ui";
 
 export function ProductSection({ eyebrow, title, description, children }: { eyebrow?: string; title: string; description?: string; children?: ReactNode }) {
   return <section className="v2-product-section">
@@ -12,20 +12,15 @@ export function ProductSection({ eyebrow, title, description, children }: { eyeb
 }
 
 export function EmptyWorkspaceV2({ onAddServer, onImport }: { onAddServer: () => void; onImport: () => void }) {
-  return <div className="v2-empty-workspace">
-    <div className="v2-empty-hero">
-      <div className="v2-hero-icon"><Server size={28} /></div>
-      <StatusBadge tone="success">OpenSSH native</StatusBadge>
-      <h1>Connect without the friction.</h1>
-      <p>Keep servers organized, open real PTY sessions, and move between environments without rebuilding SSH commands every time.</p>
-      <div className="v2-empty-actions"><Button variant="primary" onClick={onAddServer}>Add server</Button><Button onClick={onImport}>Import OpenSSH</Button></div>
+  return <div className="v3-empty-workspace">
+    <div className="v3-empty-icon"><Server size={22} /></div>
+    <h1>No active session</h1>
+    <p>Select a server from the sidebar to connect, or create a new connection.</p>
+    <div className="v3-empty-actions">
+      <Button variant="primary" onClick={onAddServer}><Plus size={14} /> Add server</Button>
+      <Button variant="ghost" onClick={onImport}>Import OpenSSH</Button>
     </div>
-    <div className="v2-feature-grid">
-      <article><Zap size={17} /><strong>One-click sessions</strong><span>Connect from a saved server profile.</span></article>
-      <article><Keyboard size={17} /><strong>Keyboard first</strong><span>Press F1 to view workspace shortcuts.</span></article>
-      <article><Command size={17} /><strong>Real terminal</strong><span>PTY-backed OpenSSH, not a simulated console.</span></article>
-      <article><ShieldCheck size={17} /><strong>Local by design</strong><span>Connection metadata stays on your machine.</span></article>
-    </div>
+    <div className="v3-empty-hint"><Keyboard size={13} /><span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>K</kbd> Search servers</span><span>·</span><span><kbd>F1</kbd> Shortcuts</span></div>
   </div>;
 }
 
