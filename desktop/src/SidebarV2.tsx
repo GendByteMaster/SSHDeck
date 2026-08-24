@@ -18,6 +18,7 @@ import {
 import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { useCommandContextMenu } from "./commands/ContextMenuService";
+import { PortsWorkspace } from "./PortsWorkspace";
 import { ServerStatus } from "./serverStatus";
 import { SftpBrowser } from "./SftpBrowser";
 import { useWorkbench } from "./WorkbenchContext";
@@ -53,7 +54,7 @@ type Props = {
   onDelete: (server: SidebarServer) => void;
 };
 
-type SidebarView = "servers" | "sftp";
+type SidebarView = "servers" | "sftp" | "ports";
 
 const clamp = (value: number) => Math.min(520, Math.max(280, value));
 
@@ -68,10 +69,7 @@ const activityIcons: Record<ActivityFeatureId, typeof Server> = {
   settings: Settings,
 };
 
-const activityItems = productionActivityFeatures().map((feature) => ({
-  ...feature,
-  icon: activityIcons[feature.id],
-}));
+const activityItems = productionActivityFeatures().map((feature) => ({ ...feature, icon: activityIcons[feature.id] }));
 
 function statusClass(state: string) {
   switch (state) {
@@ -102,22 +100,11 @@ function ServerItem({ server, status, checking, selected, onSelect, onContextMen
   onDelete: () => void;
 }) {
   const state = checking ? "checking" : status?.state ?? "unknown";
-  return <motion.div
-    layout="position"
-    initial={{ opacity: 0, y: 3 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.16 }}
-    onPointerDown={onSelect}
-    onContextMenu={onContextMenu}
-    className={`group relative mb-1 flex min-h-14 items-center rounded-xl border transition-colors ${selected ? "border-[#6f91ff]/20 bg-[#4f7cff]/10" : "border-transparent hover:border-white/[0.055] hover:bg-white/[0.035]"}`}
-  >
+  return <motion.div layout="position" initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16 }} onPointerDown={onSelect} onContextMenu={onContextMenu} className={`group relative mb-1 flex min-h-14 items-center rounded-xl border transition-colors ${selected ? "border-[#6f91ff]/20 bg-[#4f7cff]/10" : "border-transparent hover:border-white/[0.055] hover:bg-white/[0.035]"}`}>
     <button type="button" onClick={onConnect} className="server-connect flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-[#5f86ff]/60">
       <span className={`size-2 shrink-0 rounded-full ${statusClass(state)}`} />
       <span className={`grid size-8 shrink-0 place-items-center rounded-lg border ${selected ? "border-[#6f91ff]/15 bg-[#4f7cff]/10 text-[#8fa8ff]" : "border-white/[0.055] bg-white/[0.025] text-zinc-500"}`}><Server size={15} strokeWidth={1.8} /></span>
-      <span className="min-w-0 flex-1">
-        <strong className={`block truncate text-[13px] font-medium leading-5 ${selected ? "text-zinc-100" : "text-zinc-200"}`}>{server.name}</strong>
-        <small className="mt-0.5 block truncate text-[11px] leading-4 text-zinc-600">{server.user ? `${server.user}@` : ""}{server.host}:{server.port}{status?.latencyMs != null ? ` · ${status.latencyMs} ms` : ""}</small>
-      </span>
+      <span className="min-w-0 flex-1"><strong className={`block truncate text-[13px] font-medium leading-5 ${selected ? "text-zinc-100" : "text-zinc-200"}`}>{server.name}</strong><small className="mt-0.5 block truncate text-[11px] leading-4 text-zinc-600">{server.user ? `${server.user}@` : ""}{server.host}:{server.port}{status?.latencyMs != null ? ` · ${status.latencyMs} ms` : ""}</small></span>
     </button>
     <div className="mr-1 hidden shrink-0 items-center gap-0.5 rounded-lg bg-[#0c0f14]/95 pl-1 group-hover:flex group-focus-within:flex">
       <IconAction label="Favorite" onClick={onFavorite}><Star size={13} fill={server.favorite ? "currentColor" : "none"} /></IconAction>
@@ -142,65 +129,24 @@ export function SidebarV2({ servers, favorites, groups, query, statuses, checkin
   }, [onAdd, onImport, registerAppActions]);
 
   useEffect(() => {
-    if (selectedServer.id && !allServers.some((server) => server.id === selectedServer.id)) {
-      setSelectedServer({ id: null, name: "No server selected" });
-    }
+    if (selectedServer.id && !allServers.some((server) => server.id === selectedServer.id)) setSelectedServer({ id: null, name: "No server selected" });
   }, [allServers, selectedServer.id, setSelectedServer]);
 
-  function selectServer(server: SidebarServer) {
-    setSelectedServer({ id: server.id, name: server.name });
-  }
-
-  function selectSftpServer(serverId: string) {
-    const server = allServers.find((value) => value.id === serverId);
-    if (server) selectServer(server);
-  }
-
-  function showServerContextMenu(server: SidebarServer, event: React.MouseEvent<HTMLDivElement>) {
-    event.preventDefault();
-    selectServer(server);
-    void popupCommands(["server.connect", "server.edit", "server.exportOpenSsh", "server.delete"]);
-  }
+  function selectServer(server: SidebarServer) { setSelectedServer({ id: server.id, name: server.name }); }
+  function selectSftpServer(serverId: string) { const server = allServers.find((value) => value.id === serverId); if (server) selectServer(server); }
+  function showServerContextMenu(server: SidebarServer, event: React.MouseEvent<HTMLDivElement>) { event.preventDefault(); selectServer(server); void popupCommands(["server.connect", "server.edit", "server.exportOpenSsh", "server.delete"]); }
 
   function activateActivity(id: ActivityFeatureId) {
-    if (id === "servers" || id === "sftp") {
-      setView(id);
-      return;
-    }
+    if (id === "servers" || id === "sftp" || id === "ports") { setView(id); return; }
     if (id === "transfers") choosePanel("transfers");
   }
 
-  function beginResize(event: React.PointerEvent<HTMLDivElement>) {
-    dragStart.current = { x: event.clientX, width: primaryWidth };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }
-
-  function resize(event: React.PointerEvent<HTMLDivElement>) {
-    if (!dragStart.current) return;
-    setPrimaryWidth(clamp(dragStart.current.width + event.clientX - dragStart.current.x));
-  }
-
-  function endResize(event: React.PointerEvent<HTMLDivElement>) {
-    if (!dragStart.current) return;
-    dragStart.current = null;
-    event.currentTarget.releasePointerCapture(event.pointerId);
-  }
+  function beginResize(event: React.PointerEvent<HTMLDivElement>) { dragStart.current = { x: event.clientX, width: primaryWidth }; event.currentTarget.setPointerCapture(event.pointerId); }
+  function resize(event: React.PointerEvent<HTMLDivElement>) { if (dragStart.current) setPrimaryWidth(clamp(dragStart.current.width + event.clientX - dragStart.current.x)); }
+  function endResize(event: React.PointerEvent<HTMLDivElement>) { if (!dragStart.current) return; dragStart.current = null; event.currentTarget.releasePointerCapture(event.pointerId); }
 
   function renderServer(server: SidebarServer) {
-    return <ServerItem
-      key={server.id}
-      server={server}
-      status={statuses[server.id]}
-      checking={checking.has(server.id)}
-      selected={selectedServer.id === server.id}
-      onSelect={() => selectServer(server)}
-      onContextMenu={(event) => showServerContextMenu(server, event)}
-      onConnect={() => onConnect(server)}
-      onFavorite={() => onFavorite(server)}
-      onExport={() => onExport(server)}
-      onEdit={() => onEdit(server)}
-      onDelete={() => onDelete(server)}
-    />;
+    return <ServerItem key={server.id} server={server} status={statuses[server.id]} checking={checking.has(server.id)} selected={selectedServer.id === server.id} onSelect={() => selectServer(server)} onContextMenu={(event) => showServerContextMenu(server, event)} onConnect={() => onConnect(server)} onFavorite={() => onFavorite(server)} onExport={() => onExport(server)} onEdit={() => onEdit(server)} onDelete={() => onDelete(server)} />;
   }
 
   return <aside className="workbench-primary relative grid h-full shrink-0 grid-cols-[52px_minmax(0,1fr)] overflow-visible border-r border-white/[0.055] bg-[#0a0c10]/95 text-zinc-200" style={{ width: primaryWidth }}>
@@ -208,21 +154,8 @@ export function SidebarV2({ servers, favorites, groups, query, statuses, checkin
       <div className="mb-2 grid size-9 place-items-center rounded-xl bg-zinc-100 text-[13px] font-bold text-zinc-900 shadow-sm">S</div>
       <div className="flex w-full flex-col items-center gap-1">
         {activityItems.map(({ id, label, icon: Icon }) => {
-          const active = id === "transfers"
-            ? panelVisible && panelTab === "transfers"
-            : (id === "servers" || id === "sftp") && view === id;
-          return <button
-            key={id}
-            type="button"
-            title={label}
-            aria-label={label}
-            aria-current={active ? "page" : undefined}
-            onClick={() => activateActivity(id)}
-            className={`relative grid size-10 place-items-center rounded-xl transition-colors ${active ? "bg-[#4f7cff]/12 text-[#89a5ff]" : "text-zinc-600 hover:bg-white/[0.035] hover:text-zinc-400"}`}
-          >
-            {active && <span className="absolute -left-1.5 h-5 w-0.5 rounded-r-full bg-[#6f91ff]" />}
-            <Icon size={18} strokeWidth={1.8} />
-          </button>;
+          const active = id === "transfers" ? panelVisible && panelTab === "transfers" : (id === "servers" || id === "sftp" || id === "ports") && view === id;
+          return <button key={id} type="button" title={label} aria-label={label} aria-current={active ? "page" : undefined} onClick={() => activateActivity(id)} className={`relative grid size-10 place-items-center rounded-xl transition-colors ${active ? "bg-[#4f7cff]/12 text-[#89a5ff]" : "text-zinc-600 hover:bg-white/[0.035] hover:text-zinc-400"}`}>{active && <span className="absolute -left-1.5 h-5 w-0.5 rounded-r-full bg-[#6f91ff]" />}<Icon size={18} strokeWidth={1.8} /></button>;
         })}
       </div>
     </nav>
@@ -238,9 +171,7 @@ export function SidebarV2({ servers, favorites, groups, query, statuses, checkin
         {groups.map(([group, items]) => <section key={group} className="mb-4"><div className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-700">{group}</div>{items.map(renderServer)}</section>)}
         {count === 0 && <div className="mx-2 mt-6 flex flex-col items-center rounded-2xl border border-dashed border-white/[0.07] px-4 py-7 text-center"><div className="grid size-9 place-items-center rounded-xl bg-white/[0.035] text-zinc-600"><Server size={16} /></div><strong className="mt-3 text-[12px] font-medium text-zinc-400">No servers</strong><span className="mt-1 max-w-44 text-[11px] leading-5 text-zinc-700">Add a server or import your OpenSSH config.</span></div>}
       </div>
-    </div> : <div className="flex min-h-0 min-w-0 flex-col bg-[#0d1015]/92">
-      <SftpBrowser servers={allServers} selectedServerId={selectedServer.id} onSelectServer={selectSftpServer} />
-    </div>}
+    </div> : view === "sftp" ? <div className="flex min-h-0 min-w-0 flex-col bg-[#0d1015]/92"><SftpBrowser servers={allServers} selectedServerId={selectedServer.id} onSelectServer={selectSftpServer} /></div> : <PortsWorkspace servers={allServers} activeServerId={selectedServer.id} />}
 
     <div role="separator" aria-orientation="vertical" aria-label="Resize server sidebar" className="absolute -right-1.5 top-0 z-30 h-full w-3 cursor-col-resize touch-none after:absolute after:left-[5px] after:top-0 after:h-full after:w-px after:bg-transparent hover:after:bg-[#6f91ff]/50" onPointerDown={beginResize} onPointerMove={resize} onPointerUp={endResize} />
   </aside>;
