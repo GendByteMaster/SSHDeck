@@ -10,12 +10,12 @@ import {
   EyeOff,
   KeyRound,
   LockKeyhole,
-  RefreshCw,
   Server,
   X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyWorkspaceV2 } from "./product-v2";
+import { SessionTabs } from "./SessionTabs";
 import { SidebarV2 } from "./SidebarV2";
 import { ToolsPanel } from "./ToolsPanel";
 import { useServerStatus } from "./serverStatus";
@@ -523,7 +523,16 @@ export function App() {
     <SidebarV2 favorites={favorites} groups={groups} query={query} statuses={statuses} checking={checking} onQueryChange={setQuery} onAdd={openNewServer} onImport={() => setImportOpen(true)} onConnect={(server) => void connect(server)} onFavorite={(server) => void toggleFavorite(server)} onExport={(server) => setExportServer(server)} onEdit={openEditServer} onDelete={(server) => setDeleteServer(server)} />
 
     <section className="workspace">
-      <header className="topbar"><div className="tabs">{tabs.map((tab) => <button key={tab.id} className={`tab ${activeId === tab.id ? "active" : ""}`} onClick={() => { activeIdRef.current = tab.id; setActiveId(tab.id); }}><span className={`session-dot ${tab.state}`} /><span>{tab.name}</span><RefreshCw size={12} className={tab.state === "reconnecting" ? "spin" : ""} onClick={(event) => { event.stopPropagation(); void reconnect(tab); }} /><X size={13} onClick={(event) => { event.stopPropagation(); void closeTab(tab.id); }} /></button>)}</div></header>
+      <SessionTabs
+        tabs={tabs}
+        activeId={activeId}
+        onActivate={(tab) => {
+          activeIdRef.current = tab.id;
+          setActiveId(tab.id);
+        }}
+        onReconnect={(tab) => void reconnect(tab)}
+        onClose={(tab) => void closeTab(tab.id)}
+      />
       {activeId ? <div ref={terminalHost} className="terminal-host" /> : <EmptyWorkspaceV2 onAddServer={openNewServer} onImport={() => setImportOpen(true)} />}
     </section>
 
