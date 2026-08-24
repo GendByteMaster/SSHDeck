@@ -8,6 +8,7 @@ export type CommandId =
   | "workbench.primarySidebar.toggle"
   | "workbench.secondarySidebar.toggle"
   | "workbench.panel.toggle"
+  | "workbench.panel.ports"
   | "workbench.panel.transfers"
   | "server.add"
   | "server.importOpenSsh"
@@ -253,6 +254,14 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         shortcut: "Ctrl+J",
         enabled: true,
         run: () => workbench.setPanelVisible(!workbench.panelVisible),
+      },
+      {
+        id: "workbench.panel.ports",
+        title: "Show Ports Panel",
+        description: "Open managed SSH port forwarding",
+        category: "Panel",
+        enabled: true,
+        run: () => workbench.choosePanel("ports"),
       },
       {
         id: "workbench.panel.transfers",
