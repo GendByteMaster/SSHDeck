@@ -399,7 +399,6 @@ fn skipped_step(id: &str, label: &str, detail: &str) -> SftpDiagnosticStep {
     }
 }
 
-#[tauri::command]
 pub(super) fn sftp_diagnose(server_id: String) -> Result<SftpDiagnosticResult, String> {
     let server = super::find_server(&server_id)?;
     let started = Instant::now();

@@ -11,6 +11,7 @@ export type CommandId =
   | "workbench.secondarySidebar.toggle"
   | "workbench.panel.toggle"
   | "workbench.panel.ports"
+  | "workbench.panel.logs"
   | "workbench.panel.transfers"
   | "server.add"
   | "server.importOpenSsh"
@@ -280,6 +281,14 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         category: "Panel",
         enabled: true,
         run: () => workbench.choosePanel("ports"),
+      },
+      {
+        id: "workbench.panel.logs",
+        title: "Show Logs Panel",
+        description: "Open structured SSHDeck diagnostics and runtime events",
+        category: "Panel",
+        enabled: true,
+        run: () => workbench.choosePanel("logs"),
       },
       {
         id: "workbench.panel.transfers",

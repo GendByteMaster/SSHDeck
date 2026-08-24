@@ -83,7 +83,7 @@ export const panelFeatures: WorkbenchFeature<PanelFeatureId>[] = [
     id: "logs",
     label: "Logs",
     description: "Structured SSH, SFTP, tunnel, and transfer diagnostics.",
-    readiness: "planned",
+    readiness: "ready",
   },
   {
     id: "transfers",

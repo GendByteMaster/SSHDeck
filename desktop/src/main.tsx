@@ -9,6 +9,7 @@ import "./workbenchMenu.css";
 import { App } from "./App";
 import { CommandPalette } from "./CommandPalette";
 import { DesktopShortcuts } from "./DesktopShortcuts";
+import { LogProvider } from "./LogContext";
 import { SessionProvider } from "./SessionContext";
 import { TunnelProvider } from "./TunnelContext";
 import { TransferProvider } from "./TransferContext";
@@ -21,20 +22,22 @@ import { NativeMenu } from "./commands/NativeMenu";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <WorkbenchProvider>
-    <SessionProvider>
-      <TunnelProvider>
-        <TransferProvider>
-          <CommandProvider>
-            <KeybindingService />
-            <NativeMenu />
-            <AppMenuBar />
-            <App />
-            <WorkbenchChrome />
-            <CommandPalette />
-            <DesktopShortcuts />
-          </CommandProvider>
-        </TransferProvider>
-      </TunnelProvider>
-    </SessionProvider>
+    <LogProvider>
+      <SessionProvider>
+        <TunnelProvider>
+          <TransferProvider>
+            <CommandProvider>
+              <KeybindingService />
+              <NativeMenu />
+              <AppMenuBar />
+              <App />
+              <WorkbenchChrome />
+              <CommandPalette />
+              <DesktopShortcuts />
+            </CommandProvider>
+          </TransferProvider>
+        </TunnelProvider>
+      </SessionProvider>
+    </LogProvider>
   </WorkbenchProvider>,
 );

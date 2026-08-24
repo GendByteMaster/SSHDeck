@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useLogs } from "./LogContext";
 import { TunnelProcessStatus } from "./tunnelHealth";
 import { useWorkbench } from "./WorkbenchContext";
 
@@ -51,7 +52,9 @@ export function TunnelProvider({ children }: { children: ReactNode }) {
   const tunnelsRef = useRef<Tunnel[]>([]);
   const restarting = useRef(new Set<string>());
   const attempts = useRef(new Map<string, number>());
+  const previousTunnelStates = useRef(new Map<string, string>());
   const { registerAppActions, selectedTunnel, setSelectedTunnel } = useWorkbench();
+  const { addLog } = useLogs();
   const selectedTunnelRef = useRef(selectedTunnel);
 
   useEffect(() => { tunnelsRef.current = tunnels; }, [tunnels]);
@@ -69,11 +72,13 @@ export function TunnelProvider({ children }: { children: ReactNode }) {
       applyWorkspace(workspace);
       setError(null);
     } catch (value) {
-      setError(`Could not load SSH tunnels: ${message(value)}`);
+      const text = `Could not load SSH tunnels: ${message(value)}`;
+      setError(text);
+      addLog({ subsystem: "tunnel", severity: "error", message: "Tunnel registry load failed", detail: text });
     } finally {
       setLoading(false);
     }
-  }, [applyWorkspace]);
+  }, [addLog, applyWorkspace]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -91,28 +96,66 @@ export function TunnelProvider({ children }: { children: ReactNode }) {
     try {
       const status = await invoke<TunnelProcessStatus>("start_tunnel", { id });
       attempts.current.set(id, 0);
+      previousTunnelStates.current.set(id, status.state);
       setStatuses((current) => ({ ...current, [id]: status }));
       syncSelected(id, status);
+      const tunnel = tunnelsRef.current.find((item) => item.id === id);
+      addLog({
+        subsystem: "tunnel",
+        severity: "info",
+        message: `Tunnel started: ${tunnel?.name ?? id}`,
+        detail: `state=${status.state}`,
+        serverId: tunnel?.serverId ?? null,
+        resourceId: id,
+      });
       setError(null);
     } catch (value) {
       const text = `Could not start tunnel: ${message(value)}`;
+      const tunnel = tunnelsRef.current.find((item) => item.id === id);
+      addLog({
+        subsystem: "tunnel",
+        severity: "error",
+        message: `Tunnel start failed: ${tunnel?.name ?? id}`,
+        detail: text,
+        serverId: tunnel?.serverId ?? null,
+        resourceId: id,
+      });
       setError(text);
       throw new Error(text);
     }
-  }, [syncSelected]);
+  }, [addLog, syncSelected]);
 
   const stopTunnel = useCallback(async (id: string) => {
     try {
       const status = await invoke<TunnelProcessStatus>("stop_tunnel", { id });
+      previousTunnelStates.current.set(id, status.state);
       setStatuses((current) => ({ ...current, [id]: status }));
       syncSelected(id, status);
+      const tunnel = tunnelsRef.current.find((item) => item.id === id);
+      addLog({
+        subsystem: "tunnel",
+        severity: "info",
+        message: `Tunnel stopped: ${tunnel?.name ?? id}`,
+        detail: `state=${status.state}`,
+        serverId: tunnel?.serverId ?? null,
+        resourceId: id,
+      });
       setError(null);
     } catch (value) {
       const text = `Could not stop tunnel: ${message(value)}`;
+      const tunnel = tunnelsRef.current.find((item) => item.id === id);
+      addLog({
+        subsystem: "tunnel",
+        severity: "error",
+        message: `Tunnel stop failed: ${tunnel?.name ?? id}`,
+        detail: text,
+        serverId: tunnel?.serverId ?? null,
+        resourceId: id,
+      });
       setError(text);
       throw new Error(text);
     }
-  }, [syncSelected]);
+  }, [addLog, syncSelected]);
 
   const restartTunnel = useCallback(async (id: string) => {
     if (restarting.current.has(id)) return;
@@ -127,21 +170,48 @@ export function TunnelProvider({ children }: { children: ReactNode }) {
         if (!currentTunnel?.autoRestart) return;
         attempt += 1;
         attempts.current.set(id, attempt);
+        addLog({
+          subsystem: "tunnel",
+          severity: "warn",
+          message: `Tunnel auto-restart attempt ${attempt}: ${currentTunnel.name}`,
+          serverId: currentTunnel.serverId,
+          resourceId: id,
+        });
         await new Promise((resolve) => setTimeout(resolve, 1000 * (2 ** (attempt - 1))));
         try {
           const status = await invoke<TunnelProcessStatus>("start_tunnel", { id });
+          previousTunnelStates.current.set(id, status.state);
           setStatuses((current) => ({ ...current, [id]: status }));
           syncSelected(id, status);
+          addLog({
+            subsystem: "tunnel",
+            severity: "info",
+            message: `Tunnel auto-restart succeeded: ${currentTunnel.name}`,
+            detail: `attempt=${attempt}`,
+            serverId: currentTunnel.serverId,
+            resourceId: id,
+          });
           setError(null);
           return;
         } catch (value) {
-          if (attempt >= 3) setError(`Tunnel auto-restart failed after ${attempt} attempts: ${message(value)}`);
+          if (attempt >= 3) {
+            const text = `Tunnel auto-restart failed after ${attempt} attempts: ${message(value)}`;
+            addLog({
+              subsystem: "tunnel",
+              severity: "error",
+              message: `Tunnel auto-restart exhausted: ${currentTunnel.name}`,
+              detail: text,
+              serverId: currentTunnel.serverId,
+              resourceId: id,
+            });
+            setError(text);
+          }
         }
       }
     } finally {
       restarting.current.delete(id);
     }
-  }, [syncSelected]);
+  }, [addLog, syncSelected]);
 
   useEffect(() => {
     let cancelled = false;
@@ -152,6 +222,18 @@ export function TunnelProvider({ children }: { children: ReactNode }) {
           if (cancelled) return;
           setStatuses((current) => ({ ...current, [tunnel.id]: status }));
           syncSelected(tunnel.id, status);
+          const before = previousTunnelStates.current.get(tunnel.id);
+          if (status?.state) previousTunnelStates.current.set(tunnel.id, status.state);
+          if (status?.state === "failed" && before !== "failed") {
+            addLog({
+              subsystem: "tunnel",
+              severity: "error",
+              message: `Tunnel failed: ${tunnel.name}`,
+              detail: status.reason ?? (status.exitCode != null ? `exit=${status.exitCode}` : null),
+              serverId: tunnel.serverId,
+              resourceId: tunnel.id,
+            });
+          }
           if (status?.state === "running" && status.durationMs >= 30_000) attempts.current.set(tunnel.id, 0);
           if (status?.state === "failed" && tunnel.autoRestart && (attempts.current.get(tunnel.id) ?? 0) < 3) {
             void restartTunnel(tunnel.id);
@@ -164,7 +246,7 @@ export function TunnelProvider({ children }: { children: ReactNode }) {
     void poll();
     const timer = window.setInterval(() => void poll(), 1000);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [restartTunnel, syncSelected, tunnels]);
+  }, [addLog, restartTunnel, syncSelected, tunnels]);
 
   const toggleTunnel = useCallback(async (id: string) => {
     const status = statuses[id];
@@ -192,6 +274,7 @@ export function TunnelProvider({ children }: { children: ReactNode }) {
       if (status?.state === "running" || status?.state === "stopping") {
         await invoke<TunnelProcessStatus>("stop_tunnel", { id }).catch(() => undefined);
       }
+      const tunnel = tunnelsRef.current.find((item) => item.id === id);
       const workspace = await invoke<WorkspaceTunnelData>("delete_tunnel", { id });
       applyWorkspace(workspace);
       setStatuses((current) => {
@@ -199,17 +282,25 @@ export function TunnelProvider({ children }: { children: ReactNode }) {
         delete copy[id];
         return copy;
       });
+      previousTunnelStates.current.delete(id);
       attempts.current.delete(id);
       if (selectedTunnelRef.current.id === id) {
         setSelectedTunnel({ id: null, name: "No tunnel selected", state: "stopped" });
       }
+      addLog({
+        subsystem: "tunnel",
+        severity: "info",
+        message: `Tunnel deleted: ${tunnel?.name ?? id}`,
+        serverId: tunnel?.serverId ?? null,
+        resourceId: id,
+      });
       setError(null);
     } catch (value) {
       const text = `Could not delete tunnel: ${message(value)}`;
       setError(text);
       throw new Error(text);
     }
-  }, [applyWorkspace, setSelectedTunnel, statuses]);
+  }, [addLog, applyWorkspace, setSelectedTunnel, statuses]);
 
   const toggleAutoRestart = useCallback(async (tunnel: Tunnel) => {
     await saveTunnel({ ...tunnel, autoRestart: !tunnel.autoRestart });
