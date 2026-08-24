@@ -6,6 +6,7 @@ export type CommandId =
   | "workbench.commandPalette.open"
   | "workbench.shortcuts.open"
   | "workbench.view.sessions"
+  | "workbench.view.history"
   | "workbench.primarySidebar.toggle"
   | "workbench.secondarySidebar.toggle"
   | "workbench.panel.toggle"
@@ -115,6 +116,14 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         category: "Sessions",
         enabled: true,
         run: workbench.requestShowSessionsWorkspace,
+      },
+      {
+        id: "workbench.view.history",
+        title: "Show Session History",
+        description: "Review persisted SSH session history",
+        category: "Sessions",
+        enabled: true,
+        run: workbench.requestShowHistoryWorkspace,
       },
       {
         id: "server.add",
@@ -310,6 +319,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
     workbench.requestPreviousSession,
     workbench.requestReconnectSession,
     workbench.requestSelectSession,
+    workbench.requestShowHistoryWorkspace,
     workbench.requestShowSessionsWorkspace,
     workbench.requestStartSelectedTunnel,
     workbench.requestStopSelectedTunnel,

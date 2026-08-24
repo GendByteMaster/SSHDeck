@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { hydrateSessionHistory, saveSessionHistory, SessionHistoryItem, SessionView } from "./sessionLifecycle";
+import { hydrateSessionHistory, saveSessionHistory, SESSION_HISTORY_LIMIT, SessionHistoryItem, SessionView } from "./sessionLifecycle";
 import { useWorkbench } from "./WorkbenchContext";
 
 // Owns logical session state and command navigation. Native PTY/xterm resources stay in App as a runtime adapter.
@@ -13,6 +13,7 @@ type SessionContextValue = {
   activeId: string | null;
   activeSession: SessionView | null;
   history: SessionHistoryItem[];
+  historyLoading: boolean;
   historyError: string | null;
   setSessions: React.Dispatch<React.SetStateAction<SessionView[]>>;
   setActiveId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -22,6 +23,7 @@ type SessionContextValue = {
   selectPreviousSession: () => void;
   appendHistory: (item: Omit<SessionHistoryItem, "id">) => void;
   updateHistory: (updater: (current: SessionHistoryItem[]) => SessionHistoryItem[]) => void;
+  clearHistory: () => void;
   toggleAutoReconnect: (id: string) => void;
   requestReconnect: (session: SessionView) => void;
   requestClose: (session: SessionView) => void;
@@ -34,6 +36,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<SessionView[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [history, setHistory] = useState<SessionHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const sessionsRef = useRef<SessionView[]>([]);
   const activeIdRef = useRef<string | null>(null);
@@ -47,7 +50,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     void hydrateSessionHistory()
       .then((items) => { if (!cancelled) setHistory(items); })
-      .catch((value) => { if (!cancelled) setHistoryError(`Could not load session history: ${String(value)}`); });
+      .catch((value) => { if (!cancelled) setHistoryError(`Could not load session history: ${String(value)}`); })
+      .finally(() => { if (!cancelled) setHistoryLoading(false); });
     return () => { cancelled = true; };
   }, []);
 
@@ -78,15 +82,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const updateHistory = useCallback((updater: (current: SessionHistoryItem[]) => SessionHistoryItem[]) => {
     setHistory((current) => {
-      const next = updater(current).slice(0, 30);
+      const next = updater(current).slice(0, SESSION_HISTORY_LIMIT);
       saveSessionHistory(next);
       return next;
     });
   }, []);
 
   const appendHistory = useCallback((item: Omit<SessionHistoryItem, "id">) => {
-    updateHistory((current) => [{ ...item, id: `${item.atMs}-${Math.random().toString(36).slice(2, 8)}` }, ...current]);
+    const session = sessionsRef.current.find((value) => value.serverId === item.serverId);
+    const enriched: Omit<SessionHistoryItem, "id"> = {
+      ...item,
+      startedAtMs: item.startedAtMs ?? session?.startedAtMs ?? (item.durationMs > 0 ? Math.max(0, item.atMs - item.durationMs) : null),
+      signal: item.signal ?? session?.signal ?? null,
+    };
+    updateHistory((current) => [{ ...enriched, id: `${item.atMs}-${Math.random().toString(36).slice(2, 8)}` }, ...current]);
   }, [updateHistory]);
+
+  const clearHistory = useCallback(() => updateHistory(() => []), [updateHistory]);
 
   const toggleAutoReconnect = useCallback((id: string) => {
     setSessions((current) => current.map((session) => session.id === id ? { ...session, autoReconnect: !session.autoReconnect } : session));
@@ -127,6 +139,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     activeId,
     activeSession,
     history,
+    historyLoading,
     historyError,
     setSessions,
     setActiveId,
@@ -136,6 +149,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     selectPreviousSession,
     appendHistory,
     updateHistory,
+    clearHistory,
     toggleAutoReconnect,
     requestReconnect,
     requestClose,
@@ -144,8 +158,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     activeId,
     activeSession,
     appendHistory,
+    clearHistory,
     history,
     historyError,
+    historyLoading,
     registerRuntimeActions,
     requestClose,
     requestReconnect,

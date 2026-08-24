@@ -233,7 +233,7 @@ export function App() {
             activeIdRef.current = replacement.id;
             setActiveId(replacement.id);
           }
-          appendHistory({ serverId: server.id, serverName: server.name, state: "reconnected", atMs: Date.now(), durationMs: 0, exitCode: null });
+          appendHistory({ serverId: server.id, serverName: server.name, state: "reconnected", atMs: Date.now(), startedAtMs: replacement.startedAtMs, durationMs: 0, exitCode: null, signal: null });
           void refreshServer(server.id).catch(() => undefined);
           return;
         } catch (value) {
@@ -259,7 +259,7 @@ export function App() {
           }
           const endedState: "disconnected" | "failed" = status.state === "failed" ? "failed" : "disconnected";
           setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, state: endedState, durationMs: status.durationMs, exitCode: status.exitCode, signal: status.signal } : item));
-          appendHistory({ serverId: tab.serverId, serverName: tab.name, state: endedState, atMs: status.endedAtMs ?? Date.now(), durationMs: status.durationMs, exitCode: status.exitCode });
+          appendHistory({ serverId: tab.serverId, serverName: tab.name, state: endedState, atMs: status.endedAtMs ?? Date.now(), startedAtMs: status.startedAtMs, durationMs: status.durationMs, exitCode: status.exitCode, signal: status.signal });
           if (endedState === "failed" && tab.autoReconnect && tab.reconnectAttempts < 3) void autoReconnect({ ...tab, state: "failed", durationMs: status.durationMs, exitCode: status.exitCode, signal: status.signal });
         } catch (value) {
           if (!cancelled) setError(`Could not read session state: ${String(value)}`);
@@ -349,7 +349,7 @@ export function App() {
     recentOutputText.current.delete(id);
     sessionServer.current.delete(id);
     passwordSent.current.delete(id);
-    if (tab) appendHistory({ serverId: tab.serverId, serverName: tab.name, state: "closed", atMs: Date.now(), durationMs: tab.durationMs, exitCode: tab.exitCode });
+    if (tab) appendHistory({ serverId: tab.serverId, serverName: tab.name, state: "closed", atMs: Date.now(), startedAtMs: tab.startedAtMs, durationMs: tab.durationMs, exitCode: tab.exitCode, signal: tab.signal });
     setTabs((value) => {
       const next = value.filter((item) => item.id !== id);
       tabsRef.current = next;

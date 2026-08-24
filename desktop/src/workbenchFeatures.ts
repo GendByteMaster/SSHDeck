@@ -56,7 +56,7 @@ export const activityFeatures: WorkbenchFeature<ActivityFeatureId>[] = [
     id: "history",
     label: "History",
     description: "Review full SSH session history and reconnect from previous sessions.",
-    readiness: "planned",
+    readiness: "ready",
   },
   {
     id: "transfers",
