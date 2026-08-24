@@ -164,7 +164,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const requestAddServer = useCallback(() => appActions.current.addServer?.(), []);
   const requestImportOpenSsh = useCallback(() => appActions.current.importOpenSsh?.(), []);
   const requestFocusServerSearch = useCallback(() => appActions.current.focusServerSearch?.(), []);
-  const requestShowSessionsWorkspace = useCallback(() => appActions.current.showSessionsWorkspace?.(), []);
+  const requestShowSessionsWorkspace = useCallback(() => {
+    setPrimaryVisible(true);
+    appActions.current.showSessionsWorkspace?.();
+  }, []);
   const requestSelectSession = useCallback((index: number) => appActions.current.selectSession?.(index), []);
   const requestNextSession = useCallback(() => appActions.current.nextSession?.(), []);
   const requestPreviousSession = useCallback(() => appActions.current.previousSession?.(), []);
