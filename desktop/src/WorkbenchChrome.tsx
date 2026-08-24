@@ -11,13 +11,14 @@ import {
   TerminalSquare,
   UploadCloud,
 } from "lucide-react";
+import { CommandId, useCommands } from "./commands/CommandService";
 import { PanelTab, useWorkbench } from "./WorkbenchContext";
 
-const panelTabs: { id: PanelTab; label: string; icon: typeof TerminalSquare }[] = [
-  { id: "terminal", label: "Terminal", icon: TerminalSquare },
-  { id: "ports", label: "Ports", icon: Cable },
-  { id: "logs", label: "Logs", icon: Braces },
-  { id: "transfers", label: "Transfers", icon: UploadCloud },
+const panelTabs: { id: PanelTab; label: string; icon: typeof TerminalSquare; command: CommandId }[] = [
+  { id: "terminal", label: "Terminal", icon: TerminalSquare, command: "workbench.panel.terminal" },
+  { id: "ports", label: "Ports", icon: Cable, command: "workbench.panel.ports" },
+  { id: "logs", label: "Logs", icon: Braces, command: "workbench.panel.logs" },
+  { id: "transfers", label: "Transfers", icon: UploadCloud, command: "workbench.panel.transfers" },
 ];
 
 function PanelBody({ tab, name }: { tab: PanelTab; name: string }) {
@@ -43,25 +44,16 @@ function stateDotClass(state: string) {
 }
 
 export function WorkbenchChrome() {
-  const {
-    primaryVisible,
-    secondaryVisible,
-    panelVisible,
-    panelTab,
-    session,
-    setPrimaryVisible,
-    setSecondaryVisible,
-    setPanelVisible,
-    choosePanel,
-  } = useWorkbench();
+  const { panelVisible, panelTab, session } = useWorkbench();
+  const { execute } = useCommands();
 
   return <>
     <AnimatePresence initial={false}>
       {panelVisible && <motion.section key="bottom-panel" initial={{ y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 16, opacity: 0 }} transition={{ duration: 0.18, ease: "easeOut" }} className="wb-bottom-panel fixed inset-x-0 z-20 grid border-t border-white/[0.07] bg-[#0c0f14]/98 shadow-[0_-16px_40px_rgba(0,0,0,.24)] backdrop-blur-xl" style={{ bottom: "var(--wb-statusbar-height)", height: "var(--wb-panel-height)", gridTemplateRows: "42px minmax(0,1fr)" }} aria-label="Workbench panel">
         <header className="flex min-w-0 items-center gap-1 border-b border-white/[0.055] px-2">
-          {panelTabs.map(({ id, label, icon: Icon }) => <button key={id} type="button" onClick={() => choosePanel(id)} className={`relative flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-medium transition-colors ${panelTab === id ? "bg-[#4f7cff]/12 text-zinc-100" : "text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300"}`}><Icon size={14} /> {label}{panelTab === id && <motion.span layoutId="panel-tab-indicator" className="absolute inset-x-2 -bottom-[5px] h-px bg-[#6c8dff]" />}</button>)}
+          {panelTabs.map(({ id, label, icon: Icon, command }) => <button key={id} type="button" onClick={() => void execute(command)} className={`relative flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-medium transition-colors ${panelTab === id ? "bg-[#4f7cff]/12 text-zinc-100" : "text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300"}`}><Icon size={14} /> {label}{panelTab === id && <motion.span layoutId="panel-tab-indicator" className="absolute inset-x-2 -bottom-[5px] h-px bg-[#6c8dff]" />}</button>)}
           <span className="flex-1" />
-          <Button isIconOnly aria-label="Hide panel" onPress={() => setPanelVisible(false)} className="size-8 min-w-8 rounded-lg bg-transparent text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200"><ChevronDown size={15} /></Button>
+          <Button isIconOnly aria-label="Hide panel" onPress={() => void execute("workbench.panel.toggle")} className="size-8 min-w-8 rounded-lg bg-transparent text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200"><ChevronDown size={15} /></Button>
         </header>
         <PanelBody tab={panelTab} name={session.name} />
       </motion.section>}
@@ -73,9 +65,9 @@ export function WorkbenchChrome() {
       <span className="hidden sm:inline">OpenSSH</span>
       {session.latency && <span className="hidden sm:inline">{session.latency}</span>}
       <span className="flex-1" />
-      <button className="flex h-5 items-center gap-1 rounded-md px-1.5 text-zinc-500 transition-colors hover:bg-white/[0.05] hover:text-zinc-200" title="Toggle Servers (Ctrl+B)" onClick={() => setPrimaryVisible(!primaryVisible)}><PanelLeftClose size={13} /><span className="hidden md:inline">Servers</span></button>
-      <button className="flex h-5 items-center gap-1 rounded-md px-1.5 text-zinc-500 transition-colors hover:bg-white/[0.05] hover:text-zinc-200" title="Toggle Inspector (Ctrl+Alt+B)" onClick={() => setSecondaryVisible(!secondaryVisible)}><PanelRightClose size={13} /><span className="hidden md:inline">Inspector</span></button>
-      <button className="flex h-5 items-center gap-1 rounded-md px-1.5 text-zinc-500 transition-colors hover:bg-white/[0.05] hover:text-zinc-200" title="Toggle Panel (Ctrl+J)" onClick={() => setPanelVisible(!panelVisible)}><PanelBottom size={13} />{panelVisible ? <ChevronDown size={11} /> : <ChevronUp size={11} />}</button>
+      <button className="flex h-5 items-center gap-1 rounded-md px-1.5 text-zinc-500 transition-colors hover:bg-white/[0.05] hover:text-zinc-200" title="Toggle Servers (Ctrl+B)" onClick={() => void execute("workbench.primarySidebar.toggle")}><PanelLeftClose size={13} /><span className="hidden md:inline">Servers</span></button>
+      <button className="flex h-5 items-center gap-1 rounded-md px-1.5 text-zinc-500 transition-colors hover:bg-white/[0.05] hover:text-zinc-200" title="Toggle Inspector (Ctrl+Alt+B)" onClick={() => void execute("workbench.secondarySidebar.toggle")}><PanelRightClose size={13} /><span className="hidden md:inline">Inspector</span></button>
+      <button className="flex h-5 items-center gap-1 rounded-md px-1.5 text-zinc-500 transition-colors hover:bg-white/[0.05] hover:text-zinc-200" title="Toggle Panel (Ctrl+J)" onClick={() => void execute("workbench.panel.toggle")}><PanelBottom size={13} />{panelVisible ? <ChevronDown size={11} /> : <ChevronUp size={11} />}</button>
     </footer>
   </>;
 }
