@@ -1,0 +1,180 @@
+@import "tailwindcss";
+@import "@heroui/styles";
+
+@theme {
+  --font-sans: "Segoe UI Variable", "SF Pro Display", "SF Pro Text", Inter, system-ui, sans-serif;
+  --color-sshdeck-bg: #090b0f;
+  --color-sshdeck-panel: #11141a;
+  --color-sshdeck-border: rgba(255, 255, 255, 0.08);
+  --color-sshdeck-muted: #7f8896;
+  --color-sshdeck-accent: #4f7cff;
+}
+
+:root {
+  --wb-statusbar-height: 28px;
+  --wb-panel-height: 220px;
+  --wb-inspector-width: 320px;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { width: 100%; height: 100%; }
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--color-sshdeck-bg);
+  color: #f5f7fb;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+button, input, select, textarea { font: inherit; }
+button, input, select { -webkit-tap-highlight-color: transparent; }
+* { scrollbar-color: rgba(255,255,255,.13) transparent; scrollbar-width: thin; }
+
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear,
+input::-ms-reveal,
+input::-ms-clear { display: none !important; width: 0 !important; height: 0 !important; }
+input[type="password"]::-webkit-credentials-auto-fill-button,
+input[type="password"]::-webkit-contacts-auto-fill-button,
+input[type="password"]::-webkit-caps-lock-indicator { visibility: hidden !important; display: none !important; pointer-events: none !important; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+
+.app-shell {
+  height: calc(100vh - var(--wb-statusbar-height)) !important;
+  display: grid;
+  grid-template-columns: auto minmax(420px, 1fr) minmax(280px, var(--wb-inspector-width));
+  min-width: 0;
+  overflow: hidden;
+  background: radial-gradient(circle at 32% -10%, rgba(64, 97, 180, 0.08), transparent 34%), #090b0f;
+}
+.app-shell:not(:has(.tab.active)) { grid-template-columns: auto minmax(0, 1fr); }
+.app-shell:not(:has(.tab.active)) > .tools-panel { display: none; }
+.wb-panel-open .app-shell { height: calc(100vh - var(--wb-statusbar-height) - var(--wb-panel-height)) !important; }
+.wb-primary-hidden .workbench-primary { width: 56px !important; min-width: 56px !important; max-width: 56px !important; grid-template-columns: 56px !important; }
+.wb-primary-hidden .workbench-primary > :not(nav) { display: none !important; }
+.wb-secondary-hidden .app-shell { grid-template-columns: auto minmax(0, 1fr) !important; }
+.wb-secondary-hidden .tools-panel { display: none !important; }
+
+@layer components {
+  .workspace { @apply relative grid min-w-0 overflow-hidden border-r border-white/[0.055] bg-[#090b0f]; grid-template-rows: auto minmax(0, 1fr); }
+  .workspace:not(:has(.tab)) { grid-template-rows: minmax(0, 1fr); }
+  .workspace:not(:has(.tab)) > .topbar { @apply hidden; }
+  .topbar { @apply flex min-h-12 items-end overflow-hidden border-b border-white/[0.07] bg-[#0d1015]/95 px-2 pt-1 backdrop-blur-xl; }
+  .tabs { @apply flex min-w-0 flex-1 items-end gap-1 overflow-x-auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { @apply relative flex h-10 min-w-36 max-w-64 shrink-0 items-center gap-2 rounded-t-xl border border-transparent px-3 text-left text-[12.5px] font-medium text-zinc-500 transition-colors duration-150; background: transparent; }
+  .tab:hover { @apply bg-white/[0.035] text-zinc-300; }
+  .tab.active { @apply border-white/[0.08] border-b-[#0a0c10] bg-[#0a0c10] text-zinc-100 shadow-[0_-8px_24px_rgba(0,0,0,0.12)]; }
+  .tab > span:not(.session-dot) { @apply min-w-0 flex-1 truncate; }
+  .tab > svg { @apply shrink-0 text-zinc-600 transition-colors; }
+  .tab > svg:hover { @apply text-zinc-200; }
+  .session-dot { @apply size-2 shrink-0 rounded-full bg-zinc-700; }
+  .session-dot.active { @apply bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.35)]; }
+  .session-dot.reconnecting { @apply bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.3)]; }
+  .session-dot.disconnected { @apply bg-zinc-500; }
+  .session-dot.failed { @apply bg-rose-400 shadow-[0_0_10px_rgba(251,113,133,0.3)]; }
+  .terminal-host { @apply relative min-h-0 min-w-0 overflow-hidden bg-[#080a0d] p-3; }
+  .terminal-instance, .terminal-instance .xterm { @apply h-full w-full; }
+
+  .tools-panel { @apply relative min-w-[280px] max-w-[520px] overflow-y-auto border-l border-white/[0.06] bg-[#0b0f14] px-4 pb-5; width: var(--wb-inspector-width); scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.09) transparent; }
+  .tools-panel::before { content: "Inspector"; @apply sticky top-0 z-10 -mx-4 flex h-13 items-center border-b border-white/[0.04] bg-[#0b0f14]/95 px-4 text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-600 backdrop-blur-xl; }
+  .tool-section { @apply border-b border-white/[0.05] py-4 last:border-b-0; }
+  .tool-heading { @apply mb-2.5 flex min-h-8 items-center justify-between; }
+  .tool-heading > div { @apply flex items-center gap-2 text-zinc-300; }
+  .tool-heading > div svg { @apply text-zinc-600; }
+  .tool-heading strong { @apply text-[11px] font-semibold; }
+  .tool-heading button { @apply grid size-7 place-items-center rounded-lg border-0 bg-transparent text-zinc-500 transition-colors hover:bg-white/[0.05] hover:text-zinc-100 disabled:opacity-40; }
+  .status-card { @apply grid gap-3; }
+  .status-summary { @apply flex items-center gap-2.5 px-0.5; }
+  .status-summary > div { @apply grid min-w-0 gap-0.5; }
+  .status-summary strong { @apply truncate text-[13px] font-semibold text-zinc-100; }
+  .status-summary small { @apply text-[10px] text-zinc-500; }
+  .status-grid { @apply grid grid-cols-2 gap-x-4; }
+  .status-grid > div { @apply grid min-h-12 content-center border-b border-white/[0.035] py-2; }
+  .status-grid span { @apply text-[8px] font-bold uppercase tracking-[0.08em] text-zinc-600; }
+  .status-grid strong { @apply mt-1 text-[12px] font-semibold text-zinc-200; }
+  .auto-reconnect { @apply min-h-8 rounded-lg border-0 bg-white/[0.03] px-3 text-[10px] font-semibold text-zinc-400 transition-colors hover:bg-white/[0.05]; }
+  .auto-reconnect.enabled { @apply bg-emerald-400/[0.08] text-emerald-300; }
+  .status-note { @apply m-0 pt-0.5 text-[9px] leading-relaxed text-zinc-600; }
+  .status-error { @apply m-0 rounded-lg bg-rose-400/[0.08] px-2.5 py-2 text-[9px] leading-relaxed text-rose-300; }
+  .history-list, .tool-list { @apply grid gap-0.5; }
+  .history-item { @apply grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-1.5 py-1.5 transition-colors hover:bg-white/[0.03]; }
+  .history-item > div { @apply grid min-w-0 gap-0.5; }
+  .history-item strong { @apply text-[10px] font-semibold capitalize text-zinc-300; }
+  .history-item small { @apply truncate text-[9px] text-zinc-500; }
+  .history-item time { @apply text-[8px] text-zinc-600; }
+  .tool-item, .tunnel-item { @apply relative rounded-lg transition-colors hover:bg-white/[0.03]; }
+  .tool-run { @apply flex min-h-11 w-full items-center gap-2 rounded-lg border-0 bg-transparent px-2 text-left text-zinc-400 disabled:opacity-40; }
+  .tool-run span { @apply grid min-w-0 flex-1 gap-0.5; }
+  .tool-run strong { @apply truncate text-[10px] font-semibold text-zinc-300; }
+  .tool-run small { @apply truncate text-[9px] text-zinc-500; }
+  .tool-delete { @apply grid size-7 place-items-center rounded-lg border-0 bg-transparent text-zinc-600 transition-colors hover:bg-rose-400/[0.08] hover:text-rose-300; }
+  .tool-empty { @apply my-1 text-[10px] leading-relaxed text-zinc-600; }
+  .tunnel-health { @apply flex items-center gap-1.5 px-2 text-zinc-500; }
+  .tunnel-health strong { @apply text-[9px] font-semibold; }
+  .tunnel-health small { @apply text-[8px] text-zinc-600; }
+  .tunnel-auto-restart { @apply min-h-7 rounded-lg border-0 bg-white/[0.025] px-2 text-[9px] text-zinc-500 transition-colors hover:bg-white/[0.05]; }
+  .tunnel-auto-restart.enabled { @apply text-emerald-300; }
+  .tunnel-error { @apply m-0 px-2 pb-2 text-[9px] text-rose-300; }
+
+  /* Legacy dialog DOM is retained temporarily, but presentation is now owned
+     by the new Tailwind layer. This lets us remove apple.css safely before
+     extracting the forms into dedicated HeroUI components. */
+  .modal-backdrop { @apply fixed inset-0 z-[70] grid place-items-center overflow-hidden bg-black/65 p-5 backdrop-blur-xl; }
+  .modal { @apply max-h-[calc(100vh-40px)] w-[min(680px,calc(100vw-40px))] overflow-auto rounded-2xl border border-white/[0.10] bg-[#141820]/98 p-6 text-zinc-100 shadow-[0_32px_110px_rgba(0,0,0,0.58)]; }
+  .compact-modal, .confirm-modal, .import-modal { @apply w-[min(500px,calc(100vw-40px))]; }
+  .server-editor { @apply grid w-[min(760px,calc(100vw-40px))] grid-cols-2 gap-x-4 gap-y-1; }
+  .server-editor > .modal-head, .server-editor > .form-grid, .server-editor > .auth-switch, .server-editor > .auth-note, .server-editor > .modal-actions, .server-editor > p, .server-editor > label:has(+ .auth-switch) { grid-column: 1 / -1; }
+  .modal-head { @apply mb-4 flex items-start justify-between gap-4 border-b border-white/[0.06] pb-4; }
+  .modal h2 { @apply m-0 text-[22px] font-semibold tracking-[-0.025em] text-zinc-50; }
+  .modal p { @apply mt-1.5 text-[11.5px] leading-relaxed text-zinc-500; }
+  .modal label { @apply my-2 grid gap-1.5 text-[11.5px] font-semibold text-zinc-300; }
+  .modal label input:not([type=checkbox]), .modal label select { @apply min-h-11 w-full rounded-xl border border-white/[0.10] bg-[#0b0e13] px-3 text-[12px] text-zinc-100 outline-none transition-colors placeholder:text-zinc-700 hover:border-white/[0.16] focus:border-[#6688ff]/80 focus:ring-2 focus:ring-[#4f7cff]/15; }
+  .form-grid { @apply grid grid-cols-[minmax(0,1fr)_110px] gap-3; }
+  .icon-button { @apply grid size-8 shrink-0 place-items-center rounded-lg border-0 bg-transparent text-zinc-500 transition-colors hover:bg-white/[0.05] hover:text-zinc-100; }
+  .auth-switch { @apply my-1 grid grid-cols-2 gap-1 rounded-xl border border-white/[0.08] bg-[#090c11] p-1; }
+  .auth-switch button { @apply flex min-h-10 items-center justify-center gap-2 rounded-lg border-0 bg-transparent text-[11.5px] font-semibold text-zinc-500 transition-colors hover:bg-white/[0.04] hover:text-zinc-300; }
+  .auth-switch button.active { @apply bg-white/[0.08] text-zinc-100 shadow-sm; }
+  .auth-note { @apply !my-0.5 !text-[10.5px] !text-zinc-600; }
+  .password-input { @apply relative flex min-w-0 items-center; }
+  .password-input input { @apply !pr-12; }
+  .password-input button { @apply absolute right-1.5 grid size-8 place-items-center rounded-lg border-0 bg-transparent text-zinc-500 transition-colors hover:bg-white/[0.05] hover:text-zinc-100; }
+  .check { @apply flex min-h-10 items-center gap-2 text-[11.5px] text-zinc-300; }
+  .check input { accent-color: #4f7cff; }
+  .modal-actions { @apply mt-5 flex justify-end gap-2 border-t border-white/[0.06] pt-4; }
+  .primary, .secondary, .danger { @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-4 text-[11.5px] font-semibold transition-colors; }
+  .primary { @apply border-[#6f91ff]/55 bg-[#4f7cff] text-white hover:bg-[#6288ff]; }
+  .secondary { @apply border-white/[0.08] bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]; }
+  .danger { @apply border-rose-400/35 bg-rose-500/90 text-white hover:bg-rose-400; }
+  .import-list { @apply grid max-h-[420px] gap-1 overflow-y-auto; }
+  .import-row { @apply grid min-h-11 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border-0 bg-transparent px-3 text-left text-[12px] text-zinc-300 transition-colors hover:bg-white/[0.04]; }
+  .empty { @apply px-3 py-6 text-center text-[11px] text-zinc-600; }
+  .config-snippet { @apply max-h-[380px] overflow-auto rounded-xl border border-white/[0.07] bg-[#090c11] p-4 font-mono text-[11.5px] leading-relaxed text-zinc-300; }
+  .toast { @apply fixed bottom-10 left-1/2 z-[90] flex max-w-[min(620px,calc(100vw-32px))] -translate-x-1/2 items-center gap-3 rounded-xl border border-white/[0.09] bg-[#171b22]/98 px-4 py-3 text-[11.5px] text-zinc-200 shadow-[0_18px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl; }
+  .toast button { @apply grid size-7 place-items-center rounded-lg border-0 bg-transparent text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-100; }
+  .spin { animation: sshdeck-spin 0.9s linear infinite; }
+}
+
+@media (max-width: 1180px) {
+  .app-shell { grid-template-columns: auto minmax(0, 1fr) !important; }
+  .tools-panel { display: none !important; }
+}
+@media (max-width: 860px) {
+  .workbench-primary { width: 280px !important; min-width: 280px !important; max-width: 280px !important; grid-template-columns: 48px minmax(0, 1fr) !important; }
+  .workbench-primary nav { width: 48px; }
+  .server-editor { @apply grid-cols-1; }
+  .server-editor > * { grid-column: 1 !important; }
+}
+@media (max-width: 680px) {
+  .app-shell { grid-template-columns: minmax(0, 1fr) !important; }
+  .workbench-primary { display: none !important; }
+  .modal-backdrop { @apply p-3; }
+  .modal, .server-editor { @apply w-[calc(100vw-24px)] p-4; }
+  .form-grid { @apply grid-cols-1; }
+}
+
+@keyframes sshdeck-spin { to { transform: rotate(360deg); } }

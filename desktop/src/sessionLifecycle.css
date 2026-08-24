@@ -1,0 +1,28 @@
+.session-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: #68727e; box-shadow: 0 0 0 3px rgba(104,114,126,.08); }
+.session-dot.active { background: #44c767; box-shadow: 0 0 0 3px rgba(68,199,103,.09); }
+.session-dot.reconnecting { background: #d9a441; box-shadow: 0 0 0 3px rgba(217,164,65,.09); }
+.session-dot.disconnected { background: #717985; }
+.session-dot.failed { background: #d65d68; box-shadow: 0 0 0 3px rgba(214,93,104,.09); }
+
+.status-dot.active { background: #44c767; }
+.status-dot.reconnecting { background: #d9a441; }
+.status-dot.disconnected { background: #717985; box-shadow: none; }
+.status-dot.failed { background: #d65d68; box-shadow: 0 0 0 3px rgba(214,93,104,.09); }
+
+.history-section, .status-section { border-bottom: 1px solid #24282f; padding-bottom: 14px; }
+.history-list { display: grid; gap: 4px; }
+.history-item { display: grid; grid-template-columns: 8px minmax(0,1fr) auto; gap: 8px; align-items: center; padding: 7px 5px; border-radius: 7px; }
+.history-item:hover { background: #181d22; }
+.history-item div { min-width: 0; }
+.history-item strong, .history-item small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-item strong { text-transform: capitalize; font-size: 10.5px; }
+.history-item small { margin-top: 2px; color: #717b87; font-size: 9.5px; }
+.history-item time { color: #626c78; font-size: 9px; }
+
+.auto-reconnect { width: 100%; margin-top: 9px; border: 1px solid #2b3139; border-radius: 7px; background: #15191e; color: #8e98a4; padding: 7px 9px; display: flex; align-items: center; gap: 7px; cursor: pointer; font-size: 10.5px; text-align: left; }
+.auto-reconnect:hover { background: #1c2127; color: #e9edf1; }
+.auto-reconnect.enabled { border-color: #31513a; color: #b9ddc0; background: #111b15; }
+.auto-reconnect.enabled .status-dot { background: #44c767; box-shadow: 0 0 0 3px rgba(68,199,103,.08); }
+
+.spin { animation: sshdeck-spin .85s linear infinite; }
+@keyframes sshdeck-spin { to { transform: rotate(360deg); } }
