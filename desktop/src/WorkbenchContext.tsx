@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
-export type PanelTab = "terminal" | "ports" | "logs" | "transfers";
+export type PanelTab = "transfers";
 
 export type SessionSnapshot = {
   id: string | null;
@@ -91,7 +91,7 @@ const defaults: WorkbenchState = {
   primaryVisible: true,
   secondaryVisible: true,
   panelVisible: false,
-  panelTab: "terminal",
+  panelTab: "transfers",
   primaryWidth: 320,
   session: { id: null, name: "No active session", state: "idle", latency: null },
   selectedServer: { id: null, name: "No server selected" },
@@ -101,7 +101,7 @@ const defaults: WorkbenchState = {
 const WorkbenchContext = createContext<WorkbenchContextValue | null>(null);
 
 function isPanelTab(value: string): value is PanelTab {
-  return value === "terminal" || value === "ports" || value === "logs" || value === "transfers";
+  return value === "transfers";
 }
 
 function clampPrimaryWidth(value: number) {
