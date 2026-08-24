@@ -158,7 +158,7 @@ export function SidebarV2({ servers, favorites, groups, query, statuses, checkin
   function endResize(event: React.PointerEvent<HTMLDivElement>) { if (!dragStart.current) return; dragStart.current = null; event.currentTarget.releasePointerCapture(event.pointerId); }
 
   function renderServer(server: SidebarServer) {
-    return <ServerItem key={server.id} server={server} status={statuses[server.id]} checking={checking.has(server.id)} selected={selectedServer.id === server.id} onSelect={() => selectServer(server)} onContextMenu={(event) => showServerContextMenu(server, event)} onConnect={() => onConnect(server)} onFavorite={() => onFavorite(server)} onExport={() => onExport(server)} onEdit={onEdit ? () => onEdit(server) : () => undefined} onDelete={() => onDelete(server)} />;
+    return <ServerItem key={server.id} server={server} status={statuses[server.id]} checking={checking.has(server.id)} selected={selectedServer.id === server.id} onSelect={() => selectServer(server)} onContextMenu={(event) => showServerContextMenu(server, event)} onConnect={() => onConnect(server)} onFavorite={() => onFavorite(server)} onExport={() => onExport(server)} onEdit={() => onEdit(server)} onDelete={() => onDelete(server)} />;
   }
 
   return <aside className="workbench-primary relative grid h-full shrink-0 grid-cols-[52px_minmax(0,1fr)] overflow-visible border-r border-white/[0.055] bg-[#0a0c10]/95 text-zinc-200" style={{ width: primaryWidth }}>
