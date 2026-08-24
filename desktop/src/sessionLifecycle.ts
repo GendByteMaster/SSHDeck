@@ -1,3 +1,5 @@
+import { invoke } from "@tauri-apps/api/core";
+
 export type SessionState = "active" | "reconnecting" | "disconnected" | "failed";
 
 export type SessionProcessStatus = {
@@ -34,21 +36,23 @@ export type SessionHistoryItem = {
   exitCode: number | null;
 };
 
-const HISTORY_KEY = "sshdeck.sessionHistory.v1";
+type WorkspaceSnapshot = { sessionHistory?: SessionHistoryItem[] };
+
+let historyCache: SessionHistoryItem[] = [];
 
 export function loadSessionHistory(): SessionHistoryItem[] {
-  try {
-    const value = localStorage.getItem(HISTORY_KEY);
-    if (!value) return [];
-    const parsed = JSON.parse(value) as SessionHistoryItem[];
-    return Array.isArray(parsed) ? parsed.slice(0, 30) : [];
-  } catch {
-    return [];
-  }
+  return historyCache.slice();
+}
+
+export async function hydrateSessionHistory(): Promise<SessionHistoryItem[]> {
+  const workspace = await invoke<WorkspaceSnapshot>("workspace_load");
+  historyCache = Array.isArray(workspace.sessionHistory) ? workspace.sessionHistory.slice(0, 30) : [];
+  return historyCache.slice();
 }
 
 export function saveSessionHistory(items: SessionHistoryItem[]) {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(items.slice(0, 30)));
+  historyCache = items.slice(0, 30);
+  void invoke("workspace_save_session_history", { items: historyCache });
 }
 
 export function formatDuration(ms: number) {
