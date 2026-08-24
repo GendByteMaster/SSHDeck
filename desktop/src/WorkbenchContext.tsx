@@ -54,6 +54,7 @@ type WorkbenchActions = {
   requestAddServer: () => void;
   requestImportOpenSsh: () => void;
   requestFocusServerSearch: () => void;
+  requestShowSessionsWorkspace: () => void;
   requestSelectSession: (index: number) => void;
   requestNextSession: () => void;
   requestPreviousSession: () => void;
@@ -72,6 +73,7 @@ export type AppActions = {
   addServer?: () => void;
   importOpenSsh?: () => void;
   focusServerSearch?: () => void;
+  showSessionsWorkspace?: () => void;
   selectSession?: (index: number) => void;
   nextSession?: () => void;
   previousSession?: () => void;
@@ -162,6 +164,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const requestAddServer = useCallback(() => appActions.current.addServer?.(), []);
   const requestImportOpenSsh = useCallback(() => appActions.current.importOpenSsh?.(), []);
   const requestFocusServerSearch = useCallback(() => appActions.current.focusServerSearch?.(), []);
+  const requestShowSessionsWorkspace = useCallback(() => appActions.current.showSessionsWorkspace?.(), []);
   const requestSelectSession = useCallback((index: number) => appActions.current.selectSession?.(index), []);
   const requestNextSession = useCallback(() => appActions.current.nextSession?.(), []);
   const requestPreviousSession = useCallback(() => appActions.current.previousSession?.(), []);
@@ -207,6 +210,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     requestAddServer,
     requestImportOpenSsh,
     requestFocusServerSearch,
+    requestShowSessionsWorkspace,
     requestSelectSession,
     requestNextSession,
     requestPreviousSession,
@@ -237,6 +241,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     requestPreviousSession,
     requestReconnectSession,
     requestSelectSession,
+    requestShowSessionsWorkspace,
     requestStartSelectedTunnel,
     requestStopSelectedTunnel,
     secondaryVisible,
