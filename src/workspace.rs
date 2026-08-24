@@ -25,6 +25,8 @@ pub struct TunnelRecord {
     pub local_port: u16,
     pub remote_host: Option<String>,
     pub remote_port: Option<u16>,
+    #[serde(default)]
+    pub auto_restart: bool,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
