@@ -1,4 +1,5 @@
 mod status;
+mod sftp;
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -754,6 +755,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(Sessions::default())
         .manage(Tunnels::default())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             list_hosts,
             list_servers,
@@ -778,7 +780,13 @@ pub fn run() {
             start_tunnel,
             stop_tunnel,
             tunnel_status,
-            active_tunnels
+            active_tunnels,
+            sftp::sftp_list_directory,
+            sftp::sftp_create_directory,
+            sftp::sftp_rename,
+            sftp::sftp_remove,
+            sftp::sftp_upload,
+            sftp::sftp_download
         ])
         .run(tauri::generate_context!())
         .expect("error while running SSHDeck");
