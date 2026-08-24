@@ -2,15 +2,15 @@
   --wb-menubar-height: 36px;
 }
 
-.sshdeck-has-custom-menu .app-shell {
+.sshdeck-menu-bar ~ .app-shell {
   height: calc(100vh - var(--wb-menubar-height) - var(--wb-statusbar-height)) !important;
   margin-top: var(--wb-menubar-height);
 }
 
-.sshdeck-has-custom-menu .wb-panel-open .app-shell {
+.wb-panel-open > .sshdeck-menu-bar ~ .app-shell {
   height: calc(100vh - var(--wb-menubar-height) - var(--wb-statusbar-height) - var(--wb-panel-height)) !important;
 }
 
-.sshdeck-has-custom-menu .modal-backdrop {
+.sshdeck-menu-bar ~ .app-shell .modal-backdrop {
   z-index: 70;
 }
