@@ -180,7 +180,8 @@ export function SftpBrowser({ servers, selectedServerId, onSelectServer }: Props
 
   function startTransfer(name: string, direction: Transfer["direction"], detail: string) {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    setTransfers((current) => [{ id, name, direction, state: "running", detail }, ...current].slice(0, 6));
+    const transfer: Transfer = { id, name, direction, state: "running", detail };
+    setTransfers((current) => [transfer, ...current].slice(0, 6));
     return id;
   }
 
