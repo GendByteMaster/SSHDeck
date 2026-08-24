@@ -90,15 +90,16 @@ impl Default for WorkspaceSettings {
 impl WorkspaceSettings {
     pub fn migrate(&mut self) -> Result<()> {
         match self.schema_version {
-            0 => self.schema_version = SETTINGS_SCHEMA_VERSION,
+            0 => {
+                self.schema_version = SETTINGS_SCHEMA_VERSION;
+                self.diagnostic_timeout_seconds = self.diagnostic_timeout_seconds.clamp(2, 30);
+                self.transfer_concurrency = self.transfer_concurrency.clamp(1, 6);
+            }
             SETTINGS_SCHEMA_VERSION => {}
             version => bail!(
                 "unsupported settings schema version {version}; this SSHDeck build supports version {SETTINGS_SCHEMA_VERSION}"
             ),
         }
-
-        self.diagnostic_timeout_seconds = self.diagnostic_timeout_seconds.clamp(2, 30);
-        self.transfer_concurrency = self.transfer_concurrency.clamp(1, 6);
         Ok(())
     }
 
@@ -177,6 +178,7 @@ impl WorkspaceStore {
         let mut workspace: WorkspaceData = serde_json::from_str(&data)
             .with_context(|| format!("failed to parse {}", self.path.display()))?;
         workspace.settings.migrate()?;
+        workspace.settings.validate()?;
         Ok(workspace)
     }
 
@@ -266,6 +268,17 @@ mod tests {
         assert_eq!(settings.schema_version, SETTINGS_SCHEMA_VERSION);
         assert_eq!(settings.diagnostic_timeout_seconds, 30);
         assert_eq!(settings.transfer_concurrency, 1);
+        settings.validate().expect("migrated settings should be valid");
+    }
+
+    #[test]
+    fn current_settings_outside_supported_ranges_are_rejected() {
+        let settings = WorkspaceSettings {
+            diagnostic_timeout_seconds: 31,
+            transfer_concurrency: 7,
+            ..WorkspaceSettings::default()
+        };
+        assert!(settings.validate().is_err());
     }
 
     #[test]
