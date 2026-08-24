@@ -44,7 +44,7 @@ function consume(event: KeyboardEvent) {
 }
 
 export function KeybindingService() {
-  const { execute } = useCommands();
+  const { execute, getCommand } = useCommands();
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -56,6 +56,9 @@ export function KeybindingService() {
         if (editable && !binding.allowInEditable) return;
         if (terminal && !binding.allowInTerminal) return;
 
+        const command = getCommand(binding.command);
+        if (!command || command.readiness === "planned" || !command.enabled) return;
+
         consume(event);
         void execute(binding.command);
         return;
@@ -64,7 +67,7 @@ export function KeybindingService() {
 
     window.addEventListener("keydown", onKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
-  }, [execute]);
+  }, [execute, getCommand]);
 
   return null;
 }
