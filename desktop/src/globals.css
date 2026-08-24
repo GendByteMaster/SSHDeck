@@ -10,6 +10,11 @@
   --color-sshdeck-accent: #4f7cff;
 }
 
+:root {
+  --wb-statusbar-height: 28px;
+  --wb-panel-height: 220px;
+}
+
 html,
 body,
 #root {
@@ -27,8 +32,36 @@ body {
   text-rendering: geometricPrecision;
 }
 
-/* Tailwind-owned workbench shell. Keep semantic class names because the
-   keyboard/chrome bridge uses them as stable DOM hooks. */
+/* Stable workbench layout hooks. These remain semantic because keyboard and
+   chrome state use them, while visual ownership lives in Tailwind. */
+.app-shell {
+  height: calc(100vh - var(--wb-statusbar-height)) !important;
+}
+
+.wb-panel-open .app-shell {
+  height: calc(100vh - var(--wb-statusbar-height) - var(--wb-panel-height)) !important;
+}
+
+.wb-primary-hidden .workbench-primary {
+  width: 56px !important;
+  min-width: 56px !important;
+  max-width: 56px !important;
+  grid-template-columns: 56px !important;
+}
+
+.wb-primary-hidden .workbench-context-sidebar,
+.wb-primary-hidden .primary-resizer {
+  display: none !important;
+}
+
+.wb-secondary-hidden .app-shell {
+  grid-template-columns: auto minmax(0, 1fr) !important;
+}
+
+.wb-secondary-hidden .tools-panel {
+  display: none !important;
+}
+
 @layer components {
   .workspace {
     @apply relative grid min-w-0 overflow-hidden bg-[#090b0f];
