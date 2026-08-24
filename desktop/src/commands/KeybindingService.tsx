@@ -16,6 +16,10 @@ const bindings: Binding[] = [
   { command: "workbench.shortcuts.open", matches: (event) => event.key === "F1", allowInEditable: true, allowInTerminal: true },
   { command: "server.add", matches: (event) => mod(event) && event.shiftKey && key("n")(event) },
   { command: "server.focusSearch", matches: (event) => mod(event) && event.shiftKey && key("k")(event) },
+  { command: "session.next", matches: (event) => event.ctrlKey && !event.shiftKey && !event.altKey && event.key === "Tab", allowInTerminal: true },
+  { command: "session.previous", matches: (event) => event.ctrlKey && event.shiftKey && !event.altKey && event.key === "Tab", allowInTerminal: true },
+  { command: "session.close", matches: (event) => mod(event) && event.shiftKey && key("w")(event), allowInTerminal: true },
+  { command: "session.reconnect", matches: (event) => mod(event) && event.shiftKey && key("r")(event), allowInTerminal: true },
   { command: "workbench.primarySidebar.toggle", matches: (event) => mod(event) && !event.shiftKey && !event.altKey && key("b")(event) },
   { command: "workbench.secondarySidebar.toggle", matches: (event) => mod(event) && !event.shiftKey && event.altKey && key("b")(event) },
   { command: "workbench.panel.toggle", matches: (event) => mod(event) && !event.shiftKey && !event.altKey && key("j")(event) },
@@ -52,9 +56,6 @@ export function KeybindingService() {
         if (editable && !binding.allowInEditable) return;
         if (terminal && !binding.allowInTerminal) return;
 
-        // Own the accelerator before WebView2/browser defaults (for example,
-        // Ctrl+Shift+P -> Print) can run. Keyboard events are only translated
-        // to command IDs here; command behavior lives in CommandService.
         consume(event);
         void execute(binding.command);
         return;
