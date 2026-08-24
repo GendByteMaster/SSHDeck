@@ -2,6 +2,7 @@ import { Button as HeroButton } from "@heroui/react";
 import { Command, Download, PanelBottom, PanelLeftClose, PanelRightClose, Plus, Search } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useWorkbench } from "./WorkbenchContext";
 
 type PaletteCommand = {
   id: string;
@@ -12,22 +13,18 @@ type PaletteCommand = {
   run: () => void;
 };
 
-function dispatchWorkbenchShortcut(key: string, altKey = false) {
-  window.dispatchEvent(new KeyboardEvent("keydown", {
-    key,
-    ctrlKey: true,
-    altKey,
-    bubbles: true,
-  }));
-}
-
-function clickButton(label: string) {
-  const button = [...document.querySelectorAll<HTMLButtonElement>("button")]
-    .find((item) => item.textContent?.trim().toLowerCase() === label.toLowerCase());
-  button?.click();
-}
-
 export function CommandPalette() {
+  const {
+    primaryVisible,
+    secondaryVisible,
+    panelVisible,
+    setPrimaryVisible,
+    setSecondaryVisible,
+    setPanelVisible,
+    requestAddServer,
+    requestImportOpenSsh,
+    requestFocusServerSearch,
+  } = useWorkbench();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -39,14 +36,14 @@ export function CommandPalette() {
       label: "Add Server",
       description: "Create a new SSHDeck server entry",
       icon: Plus,
-      run: () => clickButton("Add server"),
+      run: requestAddServer,
     },
     {
       id: "server-import",
       label: "Import OpenSSH",
       description: "Import aliases from your OpenSSH config",
       icon: Download,
-      run: () => clickButton("Import"),
+      run: requestImportOpenSsh,
     },
     {
       id: "server-search",
@@ -54,7 +51,7 @@ export function CommandPalette() {
       description: "Move focus to the server filter",
       icon: Search,
       shortcut: "Ctrl+Shift+K",
-      run: () => document.querySelector<HTMLInputElement>('input[placeholder="Search servers"]')?.focus(),
+      run: requestFocusServerSearch,
     },
     {
       id: "layout-primary",
@@ -62,7 +59,7 @@ export function CommandPalette() {
       description: "Show or hide the primary sidebar",
       icon: PanelLeftClose,
       shortcut: "Ctrl+B",
-      run: () => dispatchWorkbenchShortcut("b"),
+      run: () => setPrimaryVisible(!primaryVisible),
     },
     {
       id: "layout-secondary",
@@ -70,7 +67,7 @@ export function CommandPalette() {
       description: "Show or hide the contextual inspector",
       icon: PanelRightClose,
       shortcut: "Ctrl+Alt+B",
-      run: () => dispatchWorkbenchShortcut("b", true),
+      run: () => setSecondaryVisible(!secondaryVisible),
     },
     {
       id: "layout-panel",
@@ -78,9 +75,9 @@ export function CommandPalette() {
       description: "Show or hide Terminal / Ports / Logs / Transfers",
       icon: PanelBottom,
       shortcut: "Ctrl+J",
-      run: () => dispatchWorkbenchShortcut("j"),
+      run: () => setPanelVisible(!panelVisible),
     },
-  ], []);
+  ], [panelVisible, primaryVisible, requestAddServer, requestFocusServerSearch, requestImportOpenSsh, secondaryVisible, setPanelVisible, setPrimaryVisible, setSecondaryVisible]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -96,8 +93,7 @@ export function CommandPalette() {
         setOpen((value) => !value);
         return;
       }
-      if (!open) return;
-      if (event.key === "Escape") {
+      if (open && event.key === "Escape") {
         event.preventDefault();
         setOpen(false);
       }
@@ -121,7 +117,7 @@ export function CommandPalette() {
 
   function run(item: PaletteCommand) {
     setOpen(false);
-    requestAnimationFrame(item.run);
+    item.run();
   }
 
   function onInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
