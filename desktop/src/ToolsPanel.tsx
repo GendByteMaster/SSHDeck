@@ -2,12 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { Activity, Cable, History, Play, Plus, RefreshCw, TerminalSquare, Trash2, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { classifyCommand, CommandRisk, riskLabel } from "./commandSafety";
+import { useCommands } from "./commands/CommandService";
 import { formatUptime, ServerStatus } from "./serverStatus";
 import { formatDuration, SessionHistoryItem, SessionView } from "./sessionLifecycle";
 import { useSettings } from "./SettingsContext";
 import { useTunnels } from "./TunnelContext";
 import { tunnelStateLabel } from "./tunnelHealth";
-import { useWorkbench } from "./WorkbenchContext";
 
 type Server = { id: string; name: string; group: string | null };
 type QuickCommand = { id: string; name: string; command: string; serverId: string | null; group: string | null };
@@ -43,7 +43,7 @@ export function ToolsPanel({ servers, activeSession, activeServerId, activeStatu
   const dataRef = useRef<WorkspaceData>(emptyWorkspace);
   const activeServer = servers.find((server) => server.id === activeServerId) ?? null;
   const sessionUsable = activeSession?.state === "active";
-  const { choosePanel } = useWorkbench();
+  const { execute } = useCommands();
   const { settings, loading: settingsLoading } = useSettings();
   const { tunnels, statuses, loading: tunnelsLoading, error: tunnelError } = useTunnels();
 
@@ -137,7 +137,7 @@ export function ToolsPanel({ servers, activeSession, activeServerId, activeStatu
     </section>
 
     <section className="tool-section tunnels-section">
-      <div className="tool-heading"><div><Cable size={14} /><strong>Port Forwarding</strong></div><button onClick={() => choosePanel("ports")} title="Open Ports panel">Open</button></div>
+      <div className="tool-heading"><div><Cable size={14} /><strong>Port Forwarding</strong></div><button onClick={() => void execute("workbench.panel.ports")} title="Open Ports panel">Open</button></div>
       {tunnelsLoading ? <p className="tool-empty">Loading tunnels…</p> : <div className="status-grid">
         <div><span>Saved</span><strong>{tunnels.length}</strong></div>
         <div><span>Running</span><strong>{runningTunnels.length}</strong></div>
