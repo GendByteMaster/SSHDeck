@@ -1,0 +1,16 @@
+:root {
+  --wb-menubar-height: 36px;
+}
+
+.sshdeck-menu-bar ~ .app-shell {
+  height: calc(100vh - var(--wb-menubar-height) - var(--wb-statusbar-height)) !important;
+  margin-top: var(--wb-menubar-height);
+}
+
+.wb-panel-open > .sshdeck-menu-bar ~ .app-shell {
+  height: calc(100vh - var(--wb-menubar-height) - var(--wb-statusbar-height) - var(--wb-panel-height)) !important;
+}
+
+.sshdeck-menu-bar ~ .app-shell .modal-backdrop {
+  z-index: 70;
+}
