@@ -1,7 +1,8 @@
-import { ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState, createContext } from "react";
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { hydrateSessionHistory, saveSessionHistory, SessionHistoryItem, SessionView } from "./sessionLifecycle";
 import { useWorkbench } from "./WorkbenchContext";
 
+// Owns logical session state and command navigation. Native PTY/xterm resources stay in App as a runtime adapter.
 type SessionRuntimeActions = {
   reconnect?: (session: SessionView) => void | Promise<void>;
   close?: (session: SessionView) => void | Promise<void>;
