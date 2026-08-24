@@ -12,6 +12,7 @@ import "./inspector-v2.css";
 import "./workspace-v3.css";
 import "./performance.css";
 import "./keyboard.css";
+import "./workbench-v4.css";
 import { App } from "./App";
 import { installKeyboardNavigation } from "./keyboard";
 
