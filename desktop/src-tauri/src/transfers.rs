@@ -3,17 +3,18 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use sshdeck::registry::ServerRecord;
+use sshdeck::workspace::WorkspaceStore;
 use tauri::State;
 use uuid::Uuid;
 
-const MAX_CONCURRENT_TRANSFERS: usize = 2;
+const DEFAULT_MAX_CONCURRENT_TRANSFERS: usize = 2;
 const UPLOAD_PROGRESS_PROBE_MS: u64 = 1_000;
 
 #[derive(Clone, Serialize)]
@@ -39,9 +40,37 @@ struct TransferRuntime {
     cancel: AtomicBool,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(super) struct TransferManager {
     transfers: Arc<Mutex<HashMap<String, Arc<TransferRuntime>>>>,
+    max_concurrent: Arc<AtomicUsize>,
+}
+
+impl Default for TransferManager {
+    fn default() -> Self {
+        Self {
+            transfers: Arc::new(Mutex::new(HashMap::new())),
+            max_concurrent: Arc::new(AtomicUsize::new(DEFAULT_MAX_CONCURRENT_TRANSFERS)),
+        }
+    }
+}
+
+impl TransferManager {
+    pub(super) fn from_workspace() -> Self {
+        let manager = Self::default();
+        if let Ok(workspace) = WorkspaceStore::load_default().and_then(|store| store.load()) {
+            manager.set_max_concurrent(workspace.settings.transfer_concurrency);
+        }
+        manager
+    }
+
+    pub(super) fn set_max_concurrent(&self, value: usize) {
+        self.max_concurrent.store(value.clamp(1, 6), Ordering::Relaxed);
+    }
+
+    fn max_concurrent(&self) -> usize {
+        self.max_concurrent.load(Ordering::Relaxed).clamp(1, 6)
+    }
 }
 
 fn now_ms() -> u64 {
@@ -219,7 +248,7 @@ fn claim_slot(manager: &TransferManager, runtime: &TransferRuntime) -> Result<bo
             running += 1;
         }
     }
-    if running >= MAX_CONCURRENT_TRANSFERS {
+    if running >= manager.max_concurrent() {
         return Ok(false);
     }
     update_snapshot(runtime, |value| {
@@ -571,7 +600,7 @@ pub(super) fn sftp_clear_finished(
 
 #[cfg(test)]
 mod tests {
-    use super::{join_remote, quote_arg};
+    use super::{TransferManager, join_remote, quote_arg};
 
     #[test]
     fn joins_remote_paths() {
@@ -584,5 +613,14 @@ mod tests {
     fn rejects_batch_injection() {
         assert!(quote_arg("bad\nrm *").is_err());
         assert_eq!(quote_arg("/srv/a b").unwrap(), "\"/srv/a b\"");
+    }
+
+    #[test]
+    fn transfer_concurrency_is_bounded() {
+        let manager = TransferManager::default();
+        manager.set_max_concurrent(0);
+        assert_eq!(manager.max_concurrent(), 1);
+        manager.set_max_concurrent(99);
+        assert_eq!(manager.max_concurrent(), 6);
     }
 }
