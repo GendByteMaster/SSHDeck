@@ -5,6 +5,7 @@ import type { FeatureReadiness } from "../workbenchFeatures";
 export type CommandId =
   | "workbench.commandPalette.open"
   | "workbench.shortcuts.open"
+  | "workbench.view.search"
   | "workbench.view.sessions"
   | "workbench.view.history"
   | "workbench.primarySidebar.toggle"
@@ -109,6 +110,15 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         shortcut: "F1",
         enabled: true,
         run: () => setShortcutsOpen((value) => !value),
+      },
+      {
+        id: "workbench.view.search",
+        title: "Show Workbench Search",
+        description: "Search servers, sessions, history, ports, transfers, Quick Commands, and SSHDeck commands",
+        category: "Workbench",
+        shortcut: "Ctrl+Shift+F",
+        enabled: true,
+        run: workbench.requestShowSearchWorkspace,
       },
       {
         id: "workbench.view.sessions",
@@ -329,6 +339,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
     workbench.requestReconnectSession,
     workbench.requestSelectSession,
     workbench.requestShowHistoryWorkspace,
+    workbench.requestShowSearchWorkspace,
     workbench.requestShowSessionsWorkspace,
     workbench.requestStartSelectedTunnel,
     workbench.requestStopSelectedTunnel,
