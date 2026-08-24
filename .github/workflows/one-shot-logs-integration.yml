@@ -1,0 +1,249 @@
+name: one-shot logs integration
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [dev/master]
+
+jobs:
+  apply:
+    if: github.head_ref == 'feat/workbench-logs' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/workbench-logs
+
+      - name: Apply structured logs integration
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str):
+              file = Path(path)
+              text = file.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected block not found in {path}: {old[:160]!r}")
+              file.write_text(text.replace(old, new, 1))
+
+          # Bottom panel runtime type + persisted layout migration.
+          replace_once("desktop/src/WorkbenchContext.tsx", 'export type PanelTab = "ports" | "transfers";', 'export type PanelTab = "ports" | "logs" | "transfers";')
+          replace_once("desktop/src/WorkbenchContext.tsx", 'return value === "ports" || value === "transfers";', 'return value === "ports" || value === "logs" || value === "transfers";')
+
+          # Logs becomes a real production panel surface.
+          replace_once("desktop/src/workbenchFeatures.ts", '''    id: "logs",
+              label: "Logs",
+              description: "Structured SSH, SFTP, tunnel, and transfer diagnostics.",
+              readiness: "planned",''', '''    id: "logs",
+              label: "Logs",
+              description: "Structured SSH, SFTP, tunnel, and transfer diagnostics.",
+              readiness: "ready",''')
+
+          # Bottom panel renders the real LogsPanel.
+          replace_once("desktop/src/WorkbenchChrome.tsx", 'import { PortsPanel } from "./PortsPanel";', 'import { LogsPanel } from "./LogsPanel";\nimport { PortsPanel } from "./PortsPanel";')
+          replace_once("desktop/src/WorkbenchChrome.tsx", 'if (feature.id !== "ports" && feature.id !== "transfers") return [];', 'if (feature.id !== "ports" && feature.id !== "logs" && feature.id !== "transfers") return [];')
+          replace_once("desktop/src/WorkbenchChrome.tsx", '{panelTab === "ports" ? <PortsPanel /> : <TransfersPanel />}', '{panelTab === "ports" ? <PortsPanel /> : panelTab === "logs" ? <LogsPanel /> : <TransfersPanel />}')
+
+          # Common command path for View menu / Command Palette.
+          replace_once("desktop/src/commands/CommandService.tsx", '  | "workbench.panel.ports"\n  | "workbench.panel.transfers"', '  | "workbench.panel.ports"\n  | "workbench.panel.logs"\n  | "workbench.panel.transfers"')
+          replace_once("desktop/src/commands/CommandService.tsx", '''      {
+                id: "workbench.panel.transfers",
+                title: "Show Transfers Panel",''', '''      {
+                id: "workbench.panel.logs",
+                title: "Show Logs Panel",
+                description: "Open structured SSHDeck diagnostics and runtime events",
+                category: "Panel",
+                enabled: true,
+                run: () => workbench.choosePanel("logs"),
+              },
+              {
+                id: "workbench.panel.transfers",
+                title: "Show Transfers Panel",''')
+
+          # Session transitions: no raw terminal output, only logical state changes.
+          replace_once("desktop/src/SessionContext.tsx", 'import { hydrateSessionHistory, saveSessionHistory, SESSION_HISTORY_LIMIT, SessionHistoryItem, SessionView } from "./sessionLifecycle";', 'import { useLogs } from "./LogContext";\nimport { hydrateSessionHistory, saveSessionHistory, SESSION_HISTORY_LIMIT, SessionHistoryItem, SessionView } from "./sessionLifecycle";')
+          replace_once("desktop/src/SessionContext.tsx", '''  const runtimeActions = useRef<SessionRuntimeActions>({});
+            const { registerAppActions } = useWorkbench();
+
+            useEffect(() => { sessionsRef.current = sessions; }, [sessions]);''', '''  const runtimeActions = useRef<SessionRuntimeActions>({});
+            const previousSessionStates = useRef(new Map<string, SessionView["state"]>());
+            const { registerAppActions } = useWorkbench();
+            const { addLog } = useLogs();
+
+            useEffect(() => {
+              const previous = previousSessionStates.current;
+              const next = new Map<string, SessionView["state"]>();
+              for (const session of sessions) {
+                next.set(session.id, session.state);
+                const before = previous.get(session.id);
+                if (!before) {
+                  addLog({ subsystem: "session", severity: "info", message: `SSH session opened: ${session.name}`, detail: `state=${session.state}`, serverId: session.serverId, sessionId: session.id });
+                } else if (before !== session.state) {
+                  const severity = session.state === "failed" ? "error" : session.state === "reconnecting" || session.state === "disconnected" ? "warn" : "info";
+                  const diagnostics = [session.exitCode != null ? `exit=${session.exitCode}` : null, session.signal ? `signal=${session.signal}` : null, session.reconnectAttempts > 0 ? `attempt=${session.reconnectAttempts}` : null].filter(Boolean).join(" · ");
+                  addLog({ subsystem: "session", severity, message: `${session.name}: ${before} → ${session.state}`, detail: diagnostics || null, serverId: session.serverId, sessionId: session.id });
+                }
+              }
+              previousSessionStates.current = next;
+              sessionsRef.current = sessions;
+            }, [addLog, sessions]);''')
+          replace_once("desktop/src/SessionContext.tsx", '''  const requestReconnect = useCallback((session: SessionView) => {
+              void runtimeActions.current.reconnect?.(session);
+            }, []);''', '''  const requestReconnect = useCallback((session: SessionView) => {
+              addLog({ subsystem: "ssh", severity: "info", message: `Reconnect requested: ${session.name}`, serverId: session.serverId, sessionId: session.id });
+              void runtimeActions.current.reconnect?.(session);
+            }, [addLog]);''')
+          replace_once("desktop/src/SessionContext.tsx", '''  const requestClose = useCallback((session: SessionView) => {
+              void runtimeActions.current.close?.(session);
+            }, []);''', '''  const requestClose = useCallback((session: SessionView) => {
+              addLog({ subsystem: "session", severity: "info", message: `Close requested: ${session.name}`, serverId: session.serverId, sessionId: session.id });
+              void runtimeActions.current.close?.(session);
+            }, [addLog]);''')
+
+          # Tunnel failures/restarts and explicit lifecycle actions.
+          replace_once("desktop/src/TunnelContext.tsx", 'import { TunnelProcessStatus } from "./tunnelHealth";', 'import { useLogs } from "./LogContext";\nimport { TunnelProcessStatus } from "./tunnelHealth";')
+          replace_once("desktop/src/TunnelContext.tsx", '''  const attempts = useRef(new Map<string, number>());
+            const { registerAppActions, selectedTunnel, setSelectedTunnel } = useWorkbench();''', '''  const attempts = useRef(new Map<string, number>());
+            const previousTunnelStates = useRef(new Map<string, string>());
+            const { registerAppActions, selectedTunnel, setSelectedTunnel } = useWorkbench();
+            const { addLog } = useLogs();''')
+          replace_once("desktop/src/TunnelContext.tsx", '''      syncSelected(id, status);
+              setError(null);
+            } catch (value) {
+              const text = `Could not start tunnel: ${message(value)}`;
+              setError(text);''', '''      syncSelected(id, status);
+              const tunnel = tunnelsRef.current.find((item) => item.id === id);
+              addLog({ subsystem: "tunnel", severity: "info", message: `Tunnel started: ${tunnel?.name ?? id}`, detail: `state=${status.state}`, serverId: tunnel?.serverId ?? null, resourceId: id });
+              setError(null);
+            } catch (value) {
+              const text = `Could not start tunnel: ${message(value)}`;
+              const tunnel = tunnelsRef.current.find((item) => item.id === id);
+              addLog({ subsystem: "tunnel", severity: "error", message: `Tunnel start failed: ${tunnel?.name ?? id}`, detail: text, serverId: tunnel?.serverId ?? null, resourceId: id });
+              setError(text);''')
+          replace_once("desktop/src/TunnelContext.tsx", '''      syncSelected(id, status);
+              setError(null);
+            } catch (value) {
+              const text = `Could not stop tunnel: ${message(value)}`;''', '''      syncSelected(id, status);
+              const tunnel = tunnelsRef.current.find((item) => item.id === id);
+              addLog({ subsystem: "tunnel", severity: "info", message: `Tunnel stopped: ${tunnel?.name ?? id}`, detail: `state=${status.state}`, serverId: tunnel?.serverId ?? null, resourceId: id });
+              setError(null);
+            } catch (value) {
+              const text = `Could not stop tunnel: ${message(value)}`;''')
+          replace_once("desktop/src/TunnelContext.tsx", '''        attempt += 1;
+                attempts.current.set(id, attempt);
+                await new Promise''', '''        attempt += 1;
+                attempts.current.set(id, attempt);
+                addLog({ subsystem: "tunnel", severity: "warn", message: `Tunnel auto-restart attempt ${attempt}: ${currentTunnel.name}`, serverId: currentTunnel.serverId, resourceId: id });
+                await new Promise''')
+          replace_once("desktop/src/TunnelContext.tsx", '''          syncSelected(id, status);
+                    setError(null);
+                    return;
+                  } catch (value) {
+                    if (attempt >= 3) setError(`Tunnel auto-restart failed after ${attempt} attempts: ${message(value)}`);''', '''          syncSelected(id, status);
+                    addLog({ subsystem: "tunnel", severity: "info", message: `Tunnel auto-restart succeeded: ${currentTunnel.name}`, detail: `attempt=${attempt}`, serverId: currentTunnel.serverId, resourceId: id });
+                    setError(null);
+                    return;
+                  } catch (value) {
+                    if (attempt >= 3) {
+                      const text = `Tunnel auto-restart failed after ${attempt} attempts: ${message(value)}`;
+                      addLog({ subsystem: "tunnel", severity: "error", message: `Tunnel auto-restart exhausted: ${currentTunnel.name}`, detail: text, serverId: currentTunnel.serverId, resourceId: id });
+                      setError(text);
+                    }''')
+          replace_once("desktop/src/TunnelContext.tsx", '''          setStatuses((current) => ({ ...current, [tunnel.id]: status }));
+                    syncSelected(tunnel.id, status);
+                    if (status?.state === "running"''', '''          setStatuses((current) => ({ ...current, [tunnel.id]: status }));
+                    syncSelected(tunnel.id, status);
+                    const before = previousTunnelStates.current.get(tunnel.id);
+                    if (status?.state) previousTunnelStates.current.set(tunnel.id, status.state);
+                    if (status?.state === "failed" && before !== "failed") {
+                      addLog({ subsystem: "tunnel", severity: "error", message: `Tunnel failed: ${tunnel.name}`, detail: status.reason ?? (status.exitCode != null ? `exit=${status.exitCode}` : null), serverId: tunnel.serverId, resourceId: tunnel.id });
+                    }
+                    if (status?.state === "running"''')
+
+          # Transfer queue state transitions.
+          replace_once("desktop/src/TransferContext.tsx", 'import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";', 'import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";')
+          replace_once("desktop/src/TransferContext.tsx", 'import { useWorkbench } from "./WorkbenchContext";', 'import { useLogs } from "./LogContext";\nimport { useWorkbench } from "./WorkbenchContext";')
+          replace_once("desktop/src/TransferContext.tsx", '''  const [transfers, setTransfers] = useState<TransferSnapshot[]>([]);
+            const { choosePanel } = useWorkbench();''', '''  const [transfers, setTransfers] = useState<TransferSnapshot[]>([]);
+            const previousStates = useRef(new Map<string, TransferSnapshot["state"]>());
+            const { choosePanel } = useWorkbench();
+            const { addLog } = useLogs();''')
+          replace_once("desktop/src/TransferContext.tsx", '''  const refresh = useCallback(async () => {
+              const next = await invoke<TransferSnapshot[]>("sftp_transfer_list");
+              setTransfers(next);
+            }, []);''', '''  const refresh = useCallback(async () => {
+              const next = await invoke<TransferSnapshot[]>("sftp_transfer_list");
+              for (const item of next) {
+                const before = previousStates.current.get(item.id);
+                if (before && before !== item.state) {
+                  const severity = item.state === "failed" ? "error" : item.state === "cancelled" ? "warn" : item.state === "running" ? "debug" : "info";
+                  addLog({ subsystem: "transfer", severity, message: `${item.direction} ${item.name}: ${before} → ${item.state}`, detail: item.error, serverId: item.serverId, resourceId: item.id });
+                }
+              }
+              previousStates.current = new Map(next.map((item) => [item.id, item.state]));
+              setTransfers(next);
+            }, [addLog]);''')
+          replace_once("desktop/src/TransferContext.tsx", '''    setTransfers((current) => mergeOne(current, next));
+              choosePanel("transfers");
+              return next;''', '''    setTransfers((current) => mergeOne(current, next));
+              previousStates.current.set(next.id, next.state);
+              addLog({ subsystem: "transfer", severity: "info", message: `Upload queued: ${next.name}`, detail: `remote=${next.remotePath}`, serverId: next.serverId, resourceId: next.id });
+              choosePanel("transfers");
+              return next;''')
+          # Second identical block belongs to download; replace the remaining occurrence.
+          replace_once("desktop/src/TransferContext.tsx", '''    setTransfers((current) => mergeOne(current, next));
+              choosePanel("transfers");
+              return next;''', '''    setTransfers((current) => mergeOne(current, next));
+              previousStates.current.set(next.id, next.state);
+              addLog({ subsystem: "transfer", severity: "info", message: `Download queued: ${next.name}`, detail: `remote=${next.remotePath}`, serverId: next.serverId, resourceId: next.id });
+              choosePanel("transfers");
+              return next;''')
+          replace_once("desktop/src/TransferContext.tsx", '''  const cancel = useCallback(async (transferId: string) => {
+              await invoke("sftp_cancel_transfer", { transferId });
+              await refresh();
+            }, [refresh]);''', '''  const cancel = useCallback(async (transferId: string) => {
+              await invoke("sftp_cancel_transfer", { transferId });
+              addLog({ subsystem: "transfer", severity: "warn", message: "Transfer cancellation requested", resourceId: transferId });
+              await refresh();
+            }, [addLog, refresh]);''')
+          replace_once("desktop/src/TransferContext.tsx", '''    setTransfers((current) => mergeOne(current, next));
+              choosePanel("transfers");
+              return next;
+            }, [choosePanel]);
+
+            const clearFinished''', '''    setTransfers((current) => mergeOne(current, next));
+              previousStates.current.set(next.id, next.state);
+              addLog({ subsystem: "transfer", severity: "info", message: `Transfer retry queued: ${next.name}`, serverId: next.serverId, resourceId: next.id });
+              choosePanel("transfers");
+              return next;
+            }, [addLog, choosePanel]);
+
+            const clearFinished''')
+          # Start callbacks now depend on addLog too.
+          text = Path("desktop/src/TransferContext.tsx").read_text()
+          text = text.replace('}, [choosePanel]);', '}, [addLog, choosePanel]);', 2)
+          Path("desktop/src/TransferContext.tsx").write_text(text)
+
+          # Emit completed SFTP diagnostics without changing the existing browser invoke contract.
+          replace_once("desktop/src-tauri/src/lib.rs", '''#[tauri::command]
+            fn copy_text(text: String) -> Result<(), String> {''', '''#[tauri::command]
+            fn sftp_diagnose(server_id: String, app: AppHandle) -> Result<sftp_diagnostics::SftpDiagnosticResult, String> {
+                let result = sftp_diagnostics::sftp_diagnose(server_id)?;
+                let _ = app.emit("sshdeck://sftp-diagnostic", result.clone());
+                Ok(result)
+            }
+
+            #[tauri::command]
+            fn copy_text(text: String) -> Result<(), String> {''')
+          replace_once("desktop/src-tauri/src/lib.rs", '            sftp_diagnostics::sftp_diagnose,', '            sftp_diagnose,')
+
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/one-shot-logs-integration.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add desktop/src desktop/src-tauri/src/lib.rs .github/workflows/one-shot-logs-integration.yml
+          git commit -m "feat(logs): integrate structured runtime events"
+          git push origin HEAD:feat/workbench-logs
