@@ -30,9 +30,11 @@ export type CommandId =
   | "session.select.6"
   | "session.select.7"
   | "session.select.8"
-  | "session.select.9";
+  | "session.select.9"
+  | "tunnel.start"
+  | "tunnel.stop";
 
-export type CommandCategory = "Workbench" | "Servers" | "Sessions" | "Panel";
+export type CommandCategory = "Workbench" | "Servers" | "Sessions" | "Tunnels" | "Panel";
 
 export type CommandDefinition = {
   id: CommandId;
@@ -76,6 +78,8 @@ export function CommandProvider({ children }: { children: ReactNode }) {
   const commands = useMemo<CommandDefinition[]>(() => {
     const hasSession = workbench.session.id !== null;
     const hasSelectedServer = workbench.selectedServer.id !== null;
+    const hasSelectedTunnel = workbench.selectedTunnel.id !== null;
+    const tunnelRunning = workbench.selectedTunnel.state === "running" || workbench.selectedTunnel.state === "stopping";
 
     const fixed: CommandDefinition[] = [
       {
@@ -191,6 +195,22 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         run: workbench.requestReconnectSession,
       },
       {
+        id: "tunnel.start",
+        title: "Start Selected Tunnel",
+        description: hasSelectedTunnel ? `Start ${workbench.selectedTunnel.name}` : "Select a tunnel first",
+        category: "Tunnels",
+        enabled: hasSelectedTunnel && !tunnelRunning,
+        run: workbench.requestStartSelectedTunnel,
+      },
+      {
+        id: "tunnel.stop",
+        title: "Stop Selected Tunnel",
+        description: hasSelectedTunnel ? `Stop ${workbench.selectedTunnel.name}` : "Select a tunnel first",
+        category: "Tunnels",
+        enabled: hasSelectedTunnel && tunnelRunning,
+        run: workbench.requestStopSelectedTunnel,
+      },
+      {
         id: "workbench.primarySidebar.toggle",
         title: "Toggle Servers Sidebar",
         description: "Show or hide the primary server sidebar",
@@ -278,9 +298,14 @@ export function CommandProvider({ children }: { children: ReactNode }) {
     workbench.requestPreviousSession,
     workbench.requestReconnectSession,
     workbench.requestSelectSession,
+    workbench.requestStartSelectedTunnel,
+    workbench.requestStopSelectedTunnel,
     workbench.secondaryVisible,
     workbench.selectedServer.id,
     workbench.selectedServer.name,
+    workbench.selectedTunnel.id,
+    workbench.selectedTunnel.name,
+    workbench.selectedTunnel.state,
     workbench.session.id,
     workbench.session.name,
     workbench.setPanelVisible,
