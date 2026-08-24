@@ -3,7 +3,6 @@ import "@xterm/xterm/css/xterm.css";
 import "./design-system.css";
 import "./styles.css";
 import "./sessionLifecycle.css";
-import "./apple.css";
 import "./performance.css";
 import "./keyboard.css";
 import "./globals.css";
