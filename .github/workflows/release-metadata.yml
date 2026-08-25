@@ -1,0 +1,118 @@
+name: Release metadata sync
+
+on:
+  push:
+    branches:
+      - "release-metadata/v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Existing release tag, for example v0.1.0_beta"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  sync-release-metadata:
+    name: Sync GitHub Release metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tag="${{ inputs.version }}"
+          else
+            ref_name="${{ github.ref_name }}"
+            if [[ "$ref_name" != release-metadata/* ]]; then
+              echo "Expected release-metadata/* branch, got $ref_name" >&2
+              exit 1
+            fi
+            tag="${ref_name#release-metadata/}"
+          fi
+
+          if [[ "$tag" != v* ]]; then
+            echo "Release tag must start with v: $tag" >&2
+            exit 1
+          fi
+
+          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
+
+      - name: Verify tag and Release exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          git rev-parse "refs/tags/$RELEASE_TAG" >/dev/null
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+
+      - name: Update prerelease title and detailed notes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          notes="docs/releases/$RELEASE_TAG.md"
+          if [[ ! -f "$notes" ]]; then
+            echo "Release notes not found: $notes" >&2
+            exit 1
+          fi
+
+          if [[ "$RELEASE_TAG" == *beta* ]]; then
+            title="🔴 SSHDeck $RELEASE_TAG — Windows Beta"
+          else
+            title="SSHDeck $RELEASE_TAG"
+          fi
+
+          gh release edit "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$title" \
+            --notes-file "$notes" \
+            --prerelease
+
+      - name: Publish SHA-256 checksum for Windows artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          asset="SSHDeck-$RELEASE_TAG-windows-x64.exe"
+          mkdir -p .release-assets
+
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "$asset" \
+            --dir .release-assets \
+            --clobber
+
+          if [[ ! -f ".release-assets/$asset" ]]; then
+            echo "Expected release asset not found after download: $asset" >&2
+            exit 1
+          fi
+
+          (
+            cd .release-assets
+            sha256sum "$asset" > SHA256SUMS.txt
+          )
+
+          gh release upload "$RELEASE_TAG" \
+            .release-assets/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+
+      - name: Verify published Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json tagName,name,isPrerelease,url,assets
