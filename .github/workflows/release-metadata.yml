@@ -4,12 +4,18 @@ on:
   push:
     branches:
       - "release-metadata/v*"
+      - "release-publish/v*"
   workflow_dispatch:
     inputs:
       version:
-        description: "Existing release tag, for example v0.1.0_beta"
+        description: "Existing release tag, for example v0.1.0_beta.1"
         required: true
         type: string
+      publish_as_release:
+        description: "Publish as a normal GitHub Release instead of Pre-release"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -26,20 +32,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve release tag
+      - name: Resolve release tag and visibility
         shell: bash
         run: |
           set -euo pipefail
 
+          publish_as_release="false"
+
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             tag="${{ inputs.version }}"
+            publish_as_release="${{ inputs.publish_as_release }}"
           else
             ref_name="${{ github.ref_name }}"
-            if [[ "$ref_name" != release-metadata/* ]]; then
-              echo "Expected release-metadata/* branch, got $ref_name" >&2
+            if [[ "$ref_name" == release-publish/* ]]; then
+              tag="${ref_name#release-publish/}"
+              publish_as_release="true"
+            elif [[ "$ref_name" == release-metadata/* ]]; then
+              tag="${ref_name#release-metadata/}"
+            else
+              echo "Expected release-metadata/* or release-publish/* branch, got $ref_name" >&2
               exit 1
             fi
-            tag="${ref_name#release-metadata/}"
           fi
 
           if [[ "$tag" != v* ]]; then
@@ -48,6 +61,7 @@ jobs:
           fi
 
           echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
+          echo "PUBLISH_AS_RELEASE=$publish_as_release" >> "$GITHUB_ENV"
 
       - name: Verify tag and Release exist
         shell: bash
@@ -57,7 +71,7 @@ jobs:
           git rev-parse "refs/tags/$RELEASE_TAG" >/dev/null
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
 
-      - name: Update prerelease title and detailed notes
+      - name: Update Release title and detailed notes
         shell: bash
         run: |
           set -euo pipefail
@@ -74,11 +88,22 @@ jobs:
             title="SSHDeck $RELEASE_TAG"
           fi
 
-          gh release edit "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "$title" \
-            --notes-file "$notes" \
-            --prerelease
+          if [[ "$PUBLISH_AS_RELEASE" == "true" ]]; then
+            echo "Publishing $RELEASE_TAG as a normal GitHub Release and marking it Latest."
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$title" \
+              --notes-file "$notes" \
+              --prerelease=false \
+              --latest
+          else
+            echo "Keeping $RELEASE_TAG as a GitHub Pre-release."
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$title" \
+              --notes-file "$notes" \
+              --prerelease
+          fi
 
       - name: Publish SHA-256 checksum for Windows artifact
         shell: bash
@@ -113,6 +138,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release view "$RELEASE_TAG" \
+
+          release_json="$(gh release view "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --json tagName,name,isPrerelease,url,assets
+            --json tagName,name,isPrerelease,url,assets)"
+
+          echo "$release_json"
+
+          if [[ "$PUBLISH_AS_RELEASE" == "true" ]]; then
+            is_prerelease="$(printf '%s' "$release_json" | jq -r '.isPrerelease')"
+            if [[ "$is_prerelease" != "false" ]]; then
+              echo "Expected $RELEASE_TAG to be a normal Release, but it is still marked prerelease." >&2
+              exit 1
+            fi
+          fi
