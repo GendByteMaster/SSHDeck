@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Existing release tag, for example v0.1.0_beta"
+        description: "Release tag, for example v0.1.0_beta.1"
         required: true
         type: string
 
@@ -25,6 +25,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Resolve release tag
         shell: pwsh
@@ -45,16 +47,45 @@ jobs:
           }
 
           "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "Publishing prerelease metadata and assets for existing tag $tag"
+          Write-Host "Preparing prerelease $tag"
 
-      - name: Verify release tag exists
+      - name: Ensure release tag exists
         shell: pwsh
         run: |
           git fetch --tags --force
-          git rev-parse "refs/tags/$env:RELEASE_TAG" *> $null
-          if ($LASTEXITCODE -ne 0) {
-            throw "Required tag $env:RELEASE_TAG does not exist. Create the reviewed release tag before publishing."
+          $tagRef = "refs/tags/$env:RELEASE_TAG"
+
+          git rev-parse $tagRef *> $null
+          if ($LASTEXITCODE -eq 0) {
+            $existingSha = (git rev-list -n 1 $tagRef).Trim()
+            Write-Host "Using existing tag $env:RELEASE_TAG at $existingSha"
           }
+          else {
+            Write-Host "Creating tag $env:RELEASE_TAG at workflow source commit $env:GITHUB_SHA"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag $env:RELEASE_TAG $env:GITHUB_SHA
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to create tag $env:RELEASE_TAG"
+            }
+
+            git push origin "refs/tags/$env:RELEASE_TAG"
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to push tag $env:RELEASE_TAG"
+            }
+          }
+
+      - name: Checkout exact release tag
+        shell: pwsh
+        run: |
+          git checkout --detach "refs/tags/$env:RELEASE_TAG"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to checkout release tag $env:RELEASE_TAG"
+          }
+
+          $tagSha = (git rev-parse HEAD).Trim()
+          "RELEASE_COMMIT=$tagSha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Building exact tag $env:RELEASE_TAG at $tagSha"
 
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
@@ -110,7 +141,12 @@ jobs:
         shell: pwsh
         run: |
           $notesPath = "docs/releases/$env:RELEASE_TAG.md"
-          $title = "🔴 SSHDeck $env:RELEASE_TAG — Windows Beta"
+          if ($env:RELEASE_TAG -match "beta") {
+            $title = "🔴 SSHDeck $env:RELEASE_TAG — Windows Beta"
+          }
+          else {
+            $title = "SSHDeck $env:RELEASE_TAG"
+          }
 
           gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY *> $null
           $releaseExists = $LASTEXITCODE -eq 0
@@ -132,7 +168,7 @@ jobs:
             }
           }
           else {
-            Write-Host "Tag exists without a Release; creating the prerelease now."
+            Write-Host "Creating prerelease for existing tag $env:RELEASE_TAG."
             if (Test-Path $notesPath) {
               gh release create $env:RELEASE_TAG `
                 --repo $env:GITHUB_REPOSITORY `
@@ -173,4 +209,4 @@ jobs:
         run: |
           gh release view $env:RELEASE_TAG `
             --repo $env:GITHUB_REPOSITORY `
-            --json tagName,name,isPrerelease,url
+            --json tagName,targetCommitish,name,isPrerelease,url,assets
